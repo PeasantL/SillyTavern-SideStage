@@ -1,4 +1,4 @@
-/* La galerie de sélection */
+/* The selection gallery */
 .civ-gallery-modal {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -23,7 +23,7 @@
     transform: scale(1.05);
 }
 
-/* La fenêtre flottante indépendante */
+/* The independent floating window */
 .civ-floating-window {
     position: fixed;
     top: 100px;
@@ -32,7 +32,7 @@
     background-color: var(--smart-background-color);
     border: 1px solid var(--smart-border-color);
     box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-    z-index: 9999; /* Au-dessus de tout */
+    z-index: 9999; /* Above everything */
     resize: both;
     overflow: hidden;
     display: flex;
@@ -42,7 +42,7 @@
 .civ-header {
     background-color: var(--smart-app-bar-color);
     padding: 5px 10px;
-    cursor: move; /* Indique qu'on peut déplacer */
+    cursor: move; /* Indicates it can be dragged */
     display: flex;
     justify-content: space-between;
     align-items: center;
