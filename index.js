@@ -174,113 +174,122 @@ jQuery(async function () {
     }
 
     // ──────────────────────────────────────────────
-    //  UPDATED: Aspect-ratio-aware image viewer
+    //  18vw wide | bottom-right | 10px from bottom | aspect-ratio locked
     // ──────────────────────────────────────────────
     function spawnSingleImageWindow(startIndex, allImages) {
-    const winId = `civ-img-${Date.now()}`;
-    let currentIndex = startIndex;
+        const winId = `civ-img-${Date.now()}`;
+        let currentIndex = startIndex;
 
-    const preloader = new Image();
-    preloader.src = allImages[currentIndex];
+        // Pre-load the image to read its natural dimensions
+        const preloader = new Image();
+        preloader.src = allImages[currentIndex];
 
-    const buildWindow = () => {
-        const natW = preloader.naturalWidth || 400;
-        const natH = preloader.naturalHeight || 300;
-        const aspectRatio = natW / natH;
+        const buildWindow = () => {
+            const natW = preloader.naturalWidth || 400;
+            const natH = preloader.naturalHeight || 300;
+            const aspectRatio = natW / natH;
 
-        // ── CHANGED: Width = 18dvw, height follows aspect ratio ──
-        const winW = window.innerWidth * 0.18;
-        const winH = winW / aspectRatio;
+            // ── Position & Size ──────────────────────────
+            // Fixed width: 18vw
+            const winW = window.innerWidth * 0.18;
+            // Height follows the image's aspect ratio
+            const winH = winW / aspectRatio;
 
-        // ── CHANGED: Bottom-right corner with 16px padding ──
-        const top  = window.innerHeight - winH - 10;
+            // Bottom-right corner, 10px from bottom, flush with right edge
+            const top  = window.innerHeight - winH - 10;
+            const left = window.innerWidth - winW;
 
-        const html = `
-        <div id="${winId}" class="civ-window-frameless"
-             style="top: ${top}px; left: ${left}px; width: ${winW}px; height: ${winH}px;">
-            <div class="civ-overlay-container">
-                <div class="civ-icon-btn civ-drag-handle" title="Move">
-                    <i class="fa-solid fa-grip"></i>
+            const html = `
+            <div id="${winId}" class="civ-window-frameless"
+                 style="top: ${top}px; left: ${left}px; width: ${winW}px; height: ${winH}px;">
+                <div class="civ-overlay-container">
+                    <div class="civ-icon-btn civ-drag-handle" title="Move">
+                        <i class="fa-solid fa-grip"></i>
+                    </div>
+                    <div class="civ-icon-btn civ-close-btn-round" title="Close">
+                        <i class="fa-solid fa-xmark"></i>
+                    </div>
                 </div>
-                <div class="civ-icon-btn civ-close-btn-round" title="Close">
-                    <i class="fa-solid fa-xmark"></i>
+                <div class="civ-nav-arrow civ-nav-left" title="Previous">
+                    <i class="fa-solid fa-chevron-left"></i>
                 </div>
-            </div>
-            <div class="civ-nav-arrow civ-nav-left" title="Previous">
-                <i class="fa-solid fa-chevron-left"></i>
-            </div>
-            <div class="civ-nav-arrow civ-nav-right" title="Next">
-                <i class="fa-solid fa-chevron-right"></i>
-            </div>
-            <div style="width:100%; height:100%; display:flex; align-items:center;
-                        justify-content:center; overflow:hidden;">
-                <img id="civ-target-img" src="${allImages[currentIndex]}"
-                     style="width:100%; height:100%; object-fit:contain;" />
-            </div>
-        </div>`;
+                <div class="civ-nav-arrow civ-nav-right" title="Next">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </div>
+                <div style="width:100%; height:100%; display:flex; align-items:center;
+                            justify-content:center; overflow:hidden;">
+                    <img id="civ-target-img" src="${allImages[currentIndex]}"
+                         style="width:100%; height:100%; object-fit:contain;" />
+                </div>
+            </div>`;
 
-        $('body').append(html);
-        const $win = $(`#${winId}`);
-        const $img = $win.find('#civ-target-img');
-        bringToFront($win);
+            $('body').append(html);
+            const $win = $(`#${winId}`);
+            const $img = $win.find('#civ-target-img');
+            bringToFront($win);
 
-        if ($.fn.draggable) $win.draggable({ handle: ".civ-drag-handle", containment: "window" });
-        if ($.fn.resizable) $win.resizable({
-            handles: "se",
-            aspectRatio: aspectRatio
-        });
+            // Draggable & Resizable (locked to aspect ratio)
+            if ($.fn.draggable) $win.draggable({ handle: ".civ-drag-handle", containment: "window" });
+            if ($.fn.resizable) $win.resizable({
+                handles: "se",
+                aspectRatio: aspectRatio
+            });
 
-        $win.find('.civ-close-btn-round').on('click', () => {
-            $(document).off('keydown.civ-nav-' + winId);
-            $win.remove();
-        });
-        $win.on('mousedown', function() { bringToFront($(this)); });
-
-        const updateImage = (newIndex) => {
-            if (newIndex < 0) newIndex = allImages.length - 1;
-            if (newIndex >= allImages.length) newIndex = 0;
-            currentIndex = newIndex;
-            $img.attr('src', allImages[currentIndex]);
-
-            const probe = new Image();
-            probe.onload = () => {
-                const newRatio = probe.naturalWidth / probe.naturalHeight;
-                if ($.fn.resizable && newRatio > 0) {
-                    $win.resizable('option', 'aspectRatio', newRatio);
-                }
-            };
-            probe.onerror = () => {};
-            probe.src = allImages[currentIndex];
-        };
-
-        $win.find('.civ-nav-left').on('click', (e) => {
-            e.stopPropagation(); updateImage(currentIndex - 1);
-        });
-        $win.find('.civ-nav-right').on('click', (e) => {
-            e.stopPropagation(); updateImage(currentIndex + 1);
-        });
-
-        $(document).on('keydown.civ-nav-' + winId, function(e) {
-            if ($(`#${winId}`).length === 0) {
-                $(document).off('keydown.civ-nav-' + winId);
-                return;
-            }
-            if (e.key === 'ArrowLeft')  updateImage(currentIndex - 1);
-            if (e.key === 'ArrowRight') updateImage(currentIndex + 1);
-            if (e.key === 'Escape') {
+            // Close
+            $win.find('.civ-close-btn-round').on('click', () => {
                 $(document).off('keydown.civ-nav-' + winId);
                 $win.remove();
-            }
-        });
-    };
+            });
+            $win.on('mousedown', function() { bringToFront($(this)); });
 
-    if (preloader.complete && preloader.naturalWidth > 0) {
-        buildWindow();
-    } else {
-        preloader.onload  = buildWindow;
-        preloader.onerror = buildWindow;
+            // Navigation (also updates aspect-ratio lock for the new image)
+            const updateImage = (newIndex) => {
+                if (newIndex < 0) newIndex = allImages.length - 1;
+                if (newIndex >= allImages.length) newIndex = 0;
+                currentIndex = newIndex;
+                $img.attr('src', allImages[currentIndex]);
+
+                const probe = new Image();
+                probe.onload = () => {
+                    const newRatio = probe.naturalWidth / probe.naturalHeight;
+                    if ($.fn.resizable && newRatio > 0) {
+                        $win.resizable('option', 'aspectRatio', newRatio);
+                    }
+                };
+                probe.onerror = () => {};
+                probe.src = allImages[currentIndex];
+            };
+
+            $win.find('.civ-nav-left').on('click', (e) => {
+                e.stopPropagation(); updateImage(currentIndex - 1);
+            });
+            $win.find('.civ-nav-right').on('click', (e) => {
+                e.stopPropagation(); updateImage(currentIndex + 1);
+            });
+
+            // Keyboard shortcuts
+            $(document).on('keydown.civ-nav-' + winId, function(e) {
+                if ($(`#${winId}`).length === 0) {
+                    $(document).off('keydown.civ-nav-' + winId);
+                    return;
+                }
+                if (e.key === 'ArrowLeft')  updateImage(currentIndex - 1);
+                if (e.key === 'ArrowRight') updateImage(currentIndex + 1);
+                if (e.key === 'Escape') {
+                    $(document).off('keydown.civ-nav-' + winId);
+                    $win.remove();
+                }
+            });
+        };
+
+        // Wait for preloader, or build immediately if already cached
+        if (preloader.complete && preloader.naturalWidth > 0) {
+            buildWindow();
+        } else {
+            preloader.onload  = buildWindow;
+            preloader.onerror = buildWindow;
+        }
     }
-}
 
     // --- 4. SCAN LOGIC ---
     function performScan() {
