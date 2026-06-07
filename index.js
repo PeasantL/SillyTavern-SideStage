@@ -103,9 +103,7 @@ jQuery(async function () {
     $('head').append(cssStyle);
 
     // --- 1. UTILITIES ---
-    // Matches raw HTTP/HTTPS image URLs
     const httpImageRegex = /(https?:\/\/[^\s)"]+?\.(?:png|jpg|jpeg|gif|webp))/gi;
-    // Matches <img src="..."> attributes (captures relative paths and absolute URLs)
     const imgSrcRegex = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+?\.(?:png|jpg|jpeg|gif|webp))["']/gi;
 
     function getSTContext() {
@@ -113,19 +111,16 @@ jQuery(async function () {
         return SillyTavern.getContext();
     }
 
-    // Protection against infinite loops (Legacy V22 safe)
     function deepScanForImages(obj, foundSet, visited = new WeakSet()) {
         if (!obj || typeof obj !== 'object') {
             if (typeof obj === 'string') {
-                // Match raw HTTP/HTTPS image URLs
                 let match;
                 while ((match = httpImageRegex.exec(obj)) !== null) {
                     foundSet.add(match[0]);
                 }
-                httpImageRegex.lastIndex = 0; // Reset since we reuse the regex
-                // Match <img src="..."> attributes (handles relative paths like user/images/...)
+                httpImageRegex.lastIndex = 0;
                 while ((match = imgSrcRegex.exec(obj)) !== null) {
-                    foundSet.add(match[1]); // match[1] is the captured path/URL
+                    foundSet.add(match[1]);
                 }
                 imgSrcRegex.lastIndex = 0;
             }
@@ -178,46 +173,139 @@ jQuery(async function () {
         });
     }
 
+    // ──────────────────────────────────────────────
+    //  UPDATED: Aspect-ratio-aware image viewer
+    // ──────────────────────────────────────────────
     function spawnSingleImageWindow(startIndex, allImages) {
         const winId = `civ-img-${Date.now()}`;
         let currentIndex = startIndex;
 
-        const html = `
-        <div id="${winId}" class="civ-window-frameless" style="top: 150px; left: 150px; width: 400px; height: 500px;">
-            <div class="civ-overlay-container">
-                <div class="civ-icon-btn civ-drag-handle" title="Move">
-                    <i class="fa-solid fa-grip"></i>
+        // Pre-load the image to read its natural dimensions
+        const preloader = new Image();
+        preloader.src = allImages[currentIndex];
+
+        /**
+         * Builds the window once we know the image dimensions.
+         * Falls back to 400×300 if the image fails to load.
+         */
+        const buildWindow = () => {
+            const natW = preloader.naturalWidth || 400;
+            const natH = preloader.naturalHeight || 300;
+            const aspectRatio = natW / natH;
+
+            // Constrain initial size to 85% of viewport (max 1200×900)
+            const maxW = Math.min(window.innerWidth * 0.85, 1200);
+            const maxH = Math.min(window.innerHeight * 0.85, 900);
+
+            let winW, winH;
+            if (natW / natH > maxW / maxH) {
+                // Image is wider than the available area → width-constrained
+                winW = Math.min(natW, maxW);
+                winH = winW / aspectRatio;
+            } else {
+                // Image is taller → height-constrained
+                winH = Math.min(natH, maxH);
+                winW = winH * aspectRatio;
+            }
+            // Floor to reasonable minimums
+            winW = Math.max(winW, 200);
+            winH = Math.max(winH, 150);
+
+            // Center in viewport
+            const top  = Math.max(20, (window.innerHeight - winH) / 2);
+            const left = Math.max(20, (window.innerWidth  - winW) / 2);
+
+            const html = `
+            <div id="${winId}" class="civ-window-frameless"
+                 style="top: ${top}px; left: ${left}px; width: ${winW}px; height: ${winH}px;">
+                <div class="civ-overlay-container">
+                    <div class="civ-icon-btn civ-drag-handle" title="Move">
+                        <i class="fa-solid fa-grip"></i>
+                    </div>
+                    <div class="civ-icon-btn civ-close-btn-round" title="Close">
+                        <i class="fa-solid fa-xmark"></i>
+                    </div>
                 </div>
-                <div class="civ-icon-btn civ-close-btn-round" title="Close">
-                    <i class="fa-solid fa-xmark"></i>
+                <div class="civ-nav-arrow civ-nav-left" title="Previous">
+                    <i class="fa-solid fa-chevron-left"></i>
                 </div>
-            </div>
-            <div class="civ-nav-arrow civ-nav-left" title="Previous"><i class="fa-solid fa-chevron-left"></i></div>
-            <div class="civ-nav-arrow civ-nav-right" title="Next"><i class="fa-solid fa-chevron-right"></i></div>
-            <div style="width: 100%; height: 100%; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-                <img id="civ-target-img" src="${allImages[currentIndex]}" style="width: 100%; height: 100%; object-fit: contain;" />
-            </div>
-        </div>`;
+                <div class="civ-nav-arrow civ-nav-right" title="Next">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </div>
+                <div style="width:100%; height:100%; display:flex; align-items:center;
+                            justify-content:center; overflow:hidden;">
+                    <img id="civ-target-img" src="${allImages[currentIndex]}"
+                         style="width:100%; height:100%; object-fit:contain;" />
+                </div>
+            </div>`;
 
-        $('body').append(html);
-        const $win = $(`#${winId}`);
-        const $img = $win.find('#civ-target-img');
-        bringToFront($win);
+            $('body').append(html);
+            const $win = $(`#${winId}`);
+            const $img = $win.find('#civ-target-img');
+            bringToFront($win);
 
-        if ($.fn.draggable) $win.draggable({ handle: ".civ-drag-handle", containment: "window" });
-        if ($.fn.resizable) $win.resizable({ handles: "se", aspectRatio: false });
+            // --- Draggable & Resizable (LOCKED to aspect ratio) ---
+            if ($.fn.draggable) $win.draggable({ handle: ".civ-drag-handle", containment: "window" });
+            if ($.fn.resizable) $win.resizable({
+                handles: "se",
+                aspectRatio: aspectRatio   // ← THE KEY CHANGE: lock to image ratio
+            });
 
-        $win.find('.civ-close-btn-round').on('click', () => $win.remove());
-        $win.on('mousedown', function() { bringToFront($(this)); });
+            // --- Close ---
+            $win.find('.civ-close-btn-round').on('click', () => {
+                $(document).off('keydown.civ-nav-' + winId);
+                $win.remove();
+            });
+            $win.on('mousedown', function() { bringToFront($(this)); });
 
-        const updateImage = (newIndex) => {
-            if (newIndex < 0) newIndex = allImages.length - 1;
-            if (newIndex >= allImages.length) newIndex = 0;
-            currentIndex = newIndex;
-            $img.attr('src', allImages[currentIndex]);
+            // --- Navigation (also updates aspect-ratio lock) ---
+            const updateImage = (newIndex) => {
+                if (newIndex < 0) newIndex = allImages.length - 1;
+                if (newIndex >= allImages.length) newIndex = 0;
+                currentIndex = newIndex;
+                $img.attr('src', allImages[currentIndex]);
+
+                // Re-read the new image's dimensions and update the resizable constraint
+                const probe = new Image();
+                probe.onload = () => {
+                    const newRatio = probe.naturalWidth / probe.naturalHeight;
+                    if ($.fn.resizable && newRatio > 0) {
+                        $win.resizable('option', 'aspectRatio', newRatio);
+                    }
+                };
+                probe.onerror = () => {}; // keep old ratio on error
+                probe.src = allImages[currentIndex];
+            };
+
+            $win.find('.civ-nav-left').on('click', (e) => {
+                e.stopPropagation(); updateImage(currentIndex - 1);
+            });
+            $win.find('.civ-nav-right').on('click', (e) => {
+                e.stopPropagation(); updateImage(currentIndex + 1);
+            });
+
+            // --- Keyboard shortcuts ---
+            $(document).on('keydown.civ-nav-' + winId, function(e) {
+                if ($(`#${winId}`).length === 0) {
+                    $(document).off('keydown.civ-nav-' + winId);
+                    return;
+                }
+                if (e.key === 'ArrowLeft')  updateImage(currentIndex - 1);
+                if (e.key === 'ArrowRight') updateImage(currentIndex + 1);
+                if (e.key === 'Escape') {
+                    $(document).off('keydown.civ-nav-' + winId);
+                    $win.remove();
+                }
+            });
         };
-        $win.find('.civ-nav-left').on('click', (e) => { e.stopPropagation(); updateImage(currentIndex - 1); });
-        $win.find('.civ-nav-right').on('click', (e) => { e.stopPropagation(); updateImage(currentIndex + 1); });
+
+        // Wait for the preloader, or build immediately if already cached
+        if (preloader.complete && preloader.naturalWidth > 0) {
+            buildWindow();
+        } else {
+            preloader.onload  = buildWindow;
+            preloader.onerror = buildWindow; // fallback to 400×300
+        }
     }
 
     // --- 4. SCAN LOGIC ---
@@ -245,11 +333,8 @@ jQuery(async function () {
     }
 
     // --- 5. ROBUST INITIALIZATION (LOOP) ---
-
-    // Injection function for the header (Character Header)
     function injectIntoCharHeader() {
         const deleteBtn = $('#delete_button');
-        // If the delete button is there, but NOT ours
         if (deleteBtn.length && $('#civ-header-btn').length === 0) {
             const btnHtml = `
                 <div id="civ-header-btn" class="menu_button" title="Image Gallery" style="margin-right:2px;">
@@ -262,15 +347,11 @@ jQuery(async function () {
         }
     }
 
-    // Memory for Auto-Close
     let lastCharId = null;
-
     function checkCharacterChange(ctx) {
         if (!ctx) return;
         const currentId = ctx.characterId;
-        
         if (lastCharId !== null && lastCharId !== undefined && lastCharId !== currentId) {
-            // If the character changes and windows are open
             if ($('.civ-window-standard, .civ-window-frameless').length > 0) {
                 console.log(logPrefix, "Character change: Closing.");
                 $('.civ-window-standard, .civ-window-frameless').remove();
@@ -279,31 +360,20 @@ jQuery(async function () {
         lastCharId = currentId;
     }
 
-    // --- MAIN LOOP (Heartbeat) ---
-    // We check every 1000ms (1 second). It's reliable and inexpensive.
     let registered = false;
     const mainLoop = setInterval(() => {
         const ctx = getSTContext();
-        
-        // 1. Slash Command (Once is enough)
         if (ctx && ctx.registerSlashCommand && !registered) {
             ctx.registerSlashCommand("gallery", performScan, [], "Opens the gallery", true, true);
             registered = true;
         }
-        
-        // 2. Puzzle Button (Fallback)
         if ($('#extensions_settings').length && $('#civ-drawer-btn').length === 0) {
-             const drawerHtml = `
+            const drawerHtml = `
                 <div class="extension_settings"><div class="inline-drawer"><div class="inline-drawer-toggle inline-drawer-header"><b>Char Image Viewer</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div><div class="inline-drawer-content"><button id="civ-drawer-btn" class="menu_button"><i class="fa-solid fa-images"></i> Open Gallery</button></div></div></div>`;
             $('#extensions_settings').append(drawerHtml);
             $(document).on('click', '#civ-drawer-btn', performScan);
         }
-
-        // 3. Header Button (Most important for you)
         injectIntoCharHeader();
-
-        // 4. Auto-Close
         checkCharacterChange(ctx);
-
-    }, 1000); // 1 second interval
+    }, 1000);
 });
