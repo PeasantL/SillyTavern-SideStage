@@ -80,7 +80,7 @@ jQuery(async function () {
     gridHtml += `</div>`;
 
     const html = `
-        <div id="${winId}" class="civ-window-standard" style="top: 100px; left: 100px; width: 600px; height: 400px;">
+        <div id="${winId}" class="civ-window-standard" style="top: 0; right: 0; width: 20vw; height: 40vh;">
             <div class="civ-header">
                 <span>Gallery: ${charName} (${images.length})</span>
                 <span class="civ-close-btn" style="cursor:pointer; color:#ff6b6b;">✖</span>
@@ -134,12 +134,12 @@ jQuery(async function () {
       const aspectRatio = natW / natH;
 
       // ── Position & Size ──────────────────────────
-      // Fixed width: 18vw
-      const winW = window.innerWidth * 0.20;
+      // Fixed width: 20vw
+      const winW = window.innerWidth * 0.2;
       // Height follows the image's aspect ratio
       const winH = winW / aspectRatio;
 
-      // Bottom-right corner, 10px from bottom, flush with right edge
+      // Bottom-right corner, 23px from bottom to be flush with shed bottom of Ipad, flush with right edge
       const top = window.innerHeight - winH - 23;
       const left = window.innerWidth - winW;
 
