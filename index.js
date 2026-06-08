@@ -109,7 +109,7 @@ jQuery(async function () {
   }
 
   // ──────────────────────────────────────────────
-  //  SINGLETON viewer: 18vw wide | bottom-right | 10px from bottom | aspect-ratio locked
+  //  SINGLETON viewer: 20vw wide | bottom-right | 22px from bottom | aspect-ratio locked | Suited for IPAD-PRO
   //  If the window already exists, just switch the image.
   // ──────────────────────────────────────────────
   function spawnSingleImageWindow(startIndex, allImages) {
@@ -135,12 +135,12 @@ jQuery(async function () {
 
       // ── Position & Size ──────────────────────────
       // Fixed width: 18vw
-      const winW = window.innerWidth * 0.18;
+      const winW = window.innerWidth * 0.20;
       // Height follows the image's aspect ratio
       const winH = winW / aspectRatio;
 
       // Bottom-right corner, 10px from bottom, flush with right edge
-      const top = window.innerHeight - winH - 10;
+      const top = window.innerHeight - winH - 22;
       const left = window.innerWidth - winW;
 
       const html = `
