@@ -384,6 +384,14 @@ jQuery(async function () {
     if (!ctx) return;
     const currentId = ctx.characterId;
     if (currentId === undefined || currentId === null) {
+      // Chat closed — clean up all windows
+      if (lastCharId !== null) {
+        console.log(logPrefix, "Chat closed: Removing windows.");
+        $(".civ-window-standard, .civ-window-frameless").remove();
+        viewerState = null;
+        lastScannedImages = [];
+        lastScannedCharName = "";
+      }
       lastCharId = null;
       autoOpenDoneForChar = null;
       return;
