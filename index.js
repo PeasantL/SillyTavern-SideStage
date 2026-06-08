@@ -140,7 +140,7 @@ jQuery(async function () {
       const winH = winW / aspectRatio;
 
       // Bottom-right corner, 10px from bottom, flush with right edge
-      const top = window.innerHeight - winH - 22;
+      const top = window.innerHeight - winH - 23;
       const left = window.innerWidth - winW;
 
       const html = `
