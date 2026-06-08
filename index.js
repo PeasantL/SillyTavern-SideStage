@@ -80,7 +80,7 @@ jQuery(async function () {
     gridHtml += `</div>`;
 
     const html = `
-        <div id="${winId}" class="civ-window-standard" style="top: 0; right: 0; width: 20vw; height: 40vh;">
+        <div id="${winId}" class="civ-window-standard" style="top: 5vh; right: 0; width: 20vw; height: 45vh;">
             <div class="civ-header">
                 <span>Gallery: ${charName} (${images.length})</span>
                 <span class="civ-close-btn" style="cursor:pointer; color:#ff6b6b;">✖</span>
