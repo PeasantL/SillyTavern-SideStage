@@ -226,8 +226,6 @@ jQuery(async function () {
           $(document).off("keydown.civ-nav-" + winId);
           return;
         }
-        if (e.key === "ArrowLeft") updateImage(currentIndex - 1);
-        if (e.key === "ArrowRight") updateImage(currentIndex + 1);
         if (e.key === "Escape") {
           $(document).off("keydown.civ-nav-" + winId);
           $win.remove();

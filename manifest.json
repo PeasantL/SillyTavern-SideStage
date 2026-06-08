@@ -1,7 +1,7 @@
 {
   "display_name": "Character Image Viewer",
   "author": "peasantl",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "loading_order": 1,
   "requires": [],
   "js": "index.js",
