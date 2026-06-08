@@ -262,24 +262,7 @@ jQuery(async function () {
     spawnGalleryWindow(result.images, result.charName);
   }
 
-  // --- 5. ROBUST INITIALIZATION (LOOP) ---
-  function injectIntoCharHeader() {
-    const deleteBtn = $("#delete_button");
-    if (deleteBtn.length && $("#civ-header-btn").length === 0) {
-      const btnHtml = `
-                <div id="civ-header-btn" class="menu_button" title="Image Gallery" style="margin-right:2px;">
-                    <i class="fa-solid fa-images"></i>
-                </div>
-            `;
-      deleteBtn.before(btnHtml);
-      $("#civ-header-btn").on("click", (e) => {
-        e.preventDefault();
-        performScan();
-      });
-      console.log(logPrefix, "Button injected into header.");
-    }
-  }
-
+  // --- 5. INITIALIZATION LOOP ---
   let lastCharId = null;
   let autoOpenDoneForChar = null;
   function checkCharacterChange(ctx) {
@@ -319,27 +302,7 @@ jQuery(async function () {
     }
   }
 
-  let registered = false;
   const mainLoop = setInterval(() => {
-    const ctx = getSTContext();
-    if (ctx && ctx.registerSlashCommand && !registered) {
-      ctx.registerSlashCommand(
-        "gallery",
-        performScan,
-        [],
-        "Opens the gallery",
-        true,
-        true,
-      );
-      registered = true;
-    }
-    if ($("#extensions_settings").length && $("#civ-drawer-btn").length === 0) {
-      const drawerHtml = `
-                <div class="extension_settings"><div class="inline-drawer"><div class="inline-drawer-toggle inline-drawer-header"><b>Char Image Viewer</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div><div class="inline-drawer-content"><button id="civ-drawer-btn" class="menu_button"><i class="fa-solid fa-images"></i> Open Gallery</button></div></div></div>`;
-      $("#extensions_settings").append(drawerHtml);
-      $(document).on("click", "#civ-drawer-btn", performScan);
-    }
-    injectIntoCharHeader();
-    checkCharacterChange(ctx);
+    checkCharacterChange(getSTContext());
   }, 1000);
 });
