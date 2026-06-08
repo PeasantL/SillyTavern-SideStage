@@ -1,9 +1,9 @@
 {
-    "display_name": "Character Image Viewer",
-    "author": "baruvibe-peasantl",
-    "version": "1.0.0",
-    "loading_order": 1,
-    "requires": [],
-    "js": "index.js",
-    "css": "style.css"
+  "display_name": "Character Image Viewer",
+  "author": "peasantl",
+  "version": "1.0.0",
+  "loading_order": 1,
+  "requires": [],
+  "js": "index.js",
+  "css": "style.css"
 }
