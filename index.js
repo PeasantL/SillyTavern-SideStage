@@ -134,13 +134,18 @@ jQuery(async function () {
       const aspectRatio = natW / natH;
 
       // ── Position & Size ──────────────────────────
-      // Fixed width: 20vw
-      const winW = window.innerWidth * 0.2;
-      // Height follows the image's aspect ratio
-      const winH = winW / aspectRatio;
+      // Preferred width: 20vw, but height must not exceed half viewport
+      const maxH = window.innerHeight * 0.5;
+      let winW = window.innerWidth * 0.2;
+      let winH = winW / aspectRatio;
 
-      // Bottom-right corner, 23px from bottom to be flush with shed bottom of Ipad, flush with right edge
-      const top = window.innerHeight - winH - 23;
+      if (winH > maxH) {
+        winH = maxH;
+        winW = winH * aspectRatio;
+      }
+
+      // Bottom-right corner, 24px from bottom, flush with right edge
+      const top = window.innerHeight - winH - 24;
       const left = window.innerWidth - winW;
 
       const html = `
