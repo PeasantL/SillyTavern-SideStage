@@ -64,14 +64,18 @@
   top: 15px;
   right: 15px;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: calc(100% - 30px);
   align-items: center;
-  gap: 15px;
+  gap: 10px;
   z-index: 20;
   opacity: 0;
   transition: opacity 0.2s ease-in-out;
 }
 
-.civ-window-frameless:hover .civ-overlay-container {
+.civ-window-frameless:hover .civ-overlay-container,
+.civ-window-frameless:focus-within .civ-overlay-container {
   opacity: 1;
 }
 
@@ -125,7 +129,8 @@
   opacity: 0;
 }
 
-.civ-window-frameless:hover .civ-nav-arrow {
+.civ-window-frameless:hover .civ-nav-arrow,
+.civ-window-frameless:focus-within .civ-nav-arrow {
   opacity: 1;
 }
 
@@ -160,6 +165,78 @@
   cursor: se-resize;
 }
 
-.civ-window-frameless:hover .ui-resizable-se {
+.civ-window-frameless:hover .ui-resizable-se,
+.civ-window-frameless:focus-within .ui-resizable-se {
   opacity: 1;
+}
+
+/* ── Gallery Body ── */
+.civ-gallery-body {
+  flex-grow: 1;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* ── Viewer Image ── */
+.civ-img-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.civ-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* ── Broken Images ── */
+.civ-thumb-error {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.04) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+  border-color: rgba(255, 107, 107, 0.5);
+  cursor: default;
+  pointer-events: none;
+}
+
+.civ-window-frameless.civ-load-error .civ-img-wrap img {
+  visibility: hidden;
+}
+
+.civ-window-frameless.civ-load-error::after {
+  content: "Image unavailable";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/* ── Keyboard Focus ── */
+.civ-icon-btn:focus-visible,
+.civ-nav-arrow:focus-visible,
+.civ-close-btn:focus-visible,
+.civ-thumb:focus-visible {
+  outline: 2px solid var(--smart-theme-color, #007bff);
+  outline-offset: 2px;
+  opacity: 1;
+}
+
+/* ── Settings ── */
+.civ-settings-note {
+  display: block;
+  margin-top: 6px;
+  opacity: 0.7;
 }
