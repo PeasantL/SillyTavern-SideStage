@@ -3,7 +3,7 @@ jQuery(async function () {
   const settingsKey = "charImgViewer";
   const logPrefix = `[${extensionName}]`;
 
-  console.log(logPrefix, "Loading v1.3.1...");
+  console.log(logPrefix, "Loading v1.4.0...");
 
   // --- 1. UTILITIES ---
   const httpImageRegex = /(https?:\/\/[^\s)"]+?\.(?:png|jpg|jpeg|gif|webp))/gi;
@@ -348,6 +348,44 @@ jQuery(async function () {
     viewerState = null;
   }
 
+  // Re-shape the window to the incoming image. Keeping the old frame would
+  // letterbox a portrait image inside a landscape window, since the <img> is
+  // object-fit: contain.
+  function fitViewerToRatio(ratio) {
+    if (!viewerState || !(ratio > 0)) return;
+    const $win = viewerState.$win;
+
+    const currentW = $win.outerWidth();
+    const currentH = $win.outerHeight();
+    if (!currentW || !currentH) return;
+    // Nothing to do for images that are already the same shape.
+    if (Math.abs(currentW / currentH - ratio) < 0.01) return;
+
+    // Keep the width the user settled on and derive the height from the new
+    // ratio, capped so a tall image cannot run off the screen.
+    let width = Math.min(currentW, window.innerWidth * 0.9);
+    let height = width / ratio;
+    const maxH = window.innerHeight * 0.9;
+    if (height > maxH) {
+      height = maxH;
+      width = height * ratio;
+    }
+
+    $win.css({ width: `${width}px`, height: `${height}px` });
+
+    if ($win.data(FOLLOW_SPAWN_KEY)) {
+      anchorViewerToSpawn($win);
+      return;
+    }
+
+    // Grow from the bottom-right corner so a window the user placed by hand
+    // stays visually put instead of spilling down and to the right.
+    const top = (parseFloat($win.css("top")) || 0) + currentH - height;
+    const left = (parseFloat($win.css("left")) || 0) + currentW - width;
+    $win.data(ANCHOR_KEY, { top, left });
+    applyPosition($win, top, left);
+  }
+
   // Reads the live list off viewerState so a refreshed list is actually used.
   function updateImage(newIndex) {
     if (!viewerState) return;
@@ -361,10 +399,13 @@ jQuery(async function () {
 
     const probe = new Image();
     probe.onload = () => {
+      // The user may have navigated on while this was loading.
+      if (!viewerState || viewerState.index !== index) return;
       const ratio = probe.naturalWidth / probe.naturalHeight;
-      if (!viewerState || !(ratio > 0)) return;
+      if (!(ratio > 0)) return;
       if (viewerState.$win.data("ui-resizable"))
         viewerState.$win.resizable("option", "aspectRatio", ratio);
+      fitViewerToRatio(ratio);
     };
     probe.onerror = () => {};
     probe.src = list[index];

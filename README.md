@@ -15,6 +15,7 @@ A SillyTavern extension that automatically displays images from a character card
   - **Transparent Background**: Perfect for viewing sprites and cutouts over your chat background.
   - **Slideshow Mode**: Navigate with on-screen arrows (`<` `>`), keyboard arrows, or `Escape` to close.
   - **Aspect-Ratio Resize**: Drag the bottom-right corner to resize, locked to the image's proportions.
+  - **Auto-Fit**: Navigating to an image with a different aspect ratio re-shapes the window to match, keeping its width and its bottom-right corner.
   - **Reset Position**: A button in the overlay controls snaps the viewer back to its spawn spot (bottom-right, just above the input bar).
 - **Floating Gallery**: A draggable and resizable thumbnail grid for browsing all found images.
 - **Quick Gallery Access**: Open the gallery from the image viewer via the gallery icon button.
