@@ -7,7 +7,7 @@ A SillyTavern extension that automatically displays images from a character card
 ## ✨ Features
 
 - **Auto-Open Viewer**: When a character is selected, the image viewer pops up automatically showing the first image. Can be turned off in the extension settings.
-- **Greeting-Aware**: The viewer opens on the image referenced by the greeting currently on screen, and follows along when you swipe to an alternate greeting or start a new chat.
+- **Greeting-Aware**: The viewer opens on the image referenced by the greeting currently on screen, and follows along when you swipe to an alternate greeting or start a new chat. Toggled by the **Change with Greeting** setting.
 - **Deep Scan**: Finds image URLs hidden anywhere in the character's data (Description, Personality, Scenario, Alternate Greetings, character book, and so on).
 - **Group Chat Support**: In a group, every member's card is scanned and the results are merged into one list.
 - **Immersive Viewer**:
@@ -35,7 +35,9 @@ A SillyTavern extension that automatically displays images from a character card
 
 - **From Viewer**: Click the gallery icon in the image viewer's overlay controls to open the full gallery.
 - **Navigate**: Use on-screen `<` `>` arrows or keyboard `←` `→` keys. Press `Escape` to close the viewer.
-- **Settings**: Extensions panel → **Character Image Viewer**. Note that auto-open is the only way the viewer appears, so disabling it makes the extension inert until it is switched back on.
+- **Settings**: Extensions panel → **Character Image Viewer**.
+  - *Open the viewer automatically on character select* — note this is the only way the viewer appears, so disabling it makes the extension inert until it is switched back on.
+  - *Change with Greeting* — whether the viewer tracks the greeting on screen. Off means it opens on the first image found and only moves when you navigate it.
 
 ## 🔒 Privacy
 

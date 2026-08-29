@@ -3,7 +3,7 @@ jQuery(async function () {
   const settingsKey = "charImgViewer";
   const logPrefix = `[${extensionName}]`;
 
-  console.log(logPrefix, "Loading v1.4.0...");
+  console.log(logPrefix, "Loading v1.5.0...");
 
   // --- 1. UTILITIES ---
   const httpImageRegex = /(https?:\/\/[^\s)"]+?\.(?:png|jpg|jpeg|gif|webp))/gi;
@@ -125,7 +125,10 @@ jQuery(async function () {
   }
 
   // --- 2. SETTINGS ---
-  const defaultSettings = Object.freeze({ autoOpen: true });
+  const defaultSettings = Object.freeze({
+    autoOpen: true,
+    changeWithGreeting: true,
+  });
   let settings = Object.assign({}, defaultSettings);
 
   function loadSettings(ctx) {
@@ -157,6 +160,13 @@ jQuery(async function () {
                     <small class="civ-settings-note">
                         Turning this off leaves no way to open the viewer, since the gallery is reached from it.
                     </small>
+                    <label class="checkbox_label" for="civ-change-with-greeting" title="Opens on the image referenced by the greeting on screen, and switches when you swipe to an alternate greeting.">
+                        <input id="civ-change-with-greeting" type="checkbox">
+                        <span>Change with Greeting</span>
+                    </label>
+                    <small class="civ-settings-note">
+                        With this off, the viewer opens on the first image found and stays put until you navigate it yourself.
+                    </small>
                 </div>
             </div>
         </div>`;
@@ -166,6 +176,13 @@ jQuery(async function () {
       .prop("checked", !!settings.autoOpen)
       .on("change", function () {
         settings.autoOpen = !!$(this).prop("checked");
+        getSTContext()?.saveSettingsDebounced?.();
+      });
+
+    $("#civ-change-with-greeting")
+      .prop("checked", !!settings.changeWithGreeting)
+      .on("change", function () {
+        settings.changeWithGreeting = !!$(this).prop("checked");
         getSTContext()?.saveSettingsDebounced?.();
       });
   }
@@ -640,7 +657,9 @@ jQuery(async function () {
     const result = scanAndGetImages();
     if (settings.autoOpen && result && result.images.length > 0) {
       // Lead with whatever the greeting on screen points at.
-      const startIndex = Math.max(0, getGreetingImageIndex(result.images));
+      const startIndex = settings.changeWithGreeting
+        ? Math.max(0, getGreetingImageIndex(result.images))
+        : 0;
       spawnSingleImageWindow(startIndex, result.images);
     }
   }
@@ -648,6 +667,7 @@ jQuery(async function () {
   // Follow the greeting: swiping to an alternate one, or opening another chat
   // for the same character, changes which image is being talked about.
   function retargetToGreeting() {
+    if (!settings.changeWithGreeting) return;
     if (!viewerState || $(`#${SINGLE_VIEWER_ID}`).length === 0) return;
     const index = getGreetingImageIndex(viewerState.images);
     if (index >= 0) updateImage(index);
