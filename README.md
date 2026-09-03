@@ -28,6 +28,7 @@ start a new chat with that group.
 - **Who is in the scene**: Selecting a layout rewrites the group's cast to the cards it lists, in roster order, and every new chat restores it. Toggling membership in the panel changes the cast for the chat you're in without touching the layout, so a layout stays a fixed, repeatable arrangement.
 - **Who opens it**: A card can be in the scene without posting a greeting, so someone can be present from the first line without speaking first.
 - **Which greeting**: Pin a card to a specific opening line instead of ST's random pick, so a scene starts the same way every time.
+- **What order**: Drag cards by the grip to set who opens the scene first. Each layout keeps its own order, so two scenes with the same cast can start from different people.
 - **A narrator**: Optional scene-setting text posted ahead of every greeting — where you are, what has just happened. It reaches the prompt as narration rather than as anyone's dialogue.
 - **Per-layout Author's Note**: Optional; blank falls back to the group's.
 - **No layout**: Always available, and the default. Groups you haven't set a layout for behave exactly as they always did.
@@ -65,7 +66,7 @@ start a new chat with that group.
 
 - **Open the roster**: Wand menu → **SideStage**, or let it open itself when you enter a group chat.
 - **Pick a layout**: The dropdown in the panel footer. It reshapes the cast straight away, and reopens the scene the same way on every new chat.
-- **Build a layout**: Extensions panel → **SideStage** → *Greeting layouts*. Add one, then set each card's *In scene*, *Greets* and *Greeting*. With the layout selected you can do the *In scene* column from the panel instead.
+- **Build a layout**: Extensions panel → **SideStage** → *Greeting layouts*. Add one, then set each card's *In scene*, *Greets* and *Greeting*, and drag the rows into the order you want the scene to open in.
 - **Open the gallery**: The gallery button in the viewer's overlay controls.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
 - **Settings**: Extensions panel → **SideStage**. One drawer, three sections:

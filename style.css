@@ -742,15 +742,21 @@
     margin: 0;
 }
 
-/* Cells are appended flat rather than wrapped in a row, so the five columns
-   line up across cards whose names are any width. The greeting column takes
-   what is left and truncates rather than widening the drawer. */
+/* Rows are real elements so a whole one can be dragged, which means the five
+   columns are held in line by widths shared between the header and every row
+   rather than by a single grid. */
 .gr-layout-grid {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto minmax(0, 1.6fr);
-    align-items: center;
-    gap: 4px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     margin-top: 4px;
+}
+
+.gr-layout-head,
+.gr-layout-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .gr-layout-head {
@@ -758,15 +764,36 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     opacity: 0.5;
-    text-align: center;
+    white-space: nowrap;
 }
 
-/* The two name columns read left, not centred like the checkbox headers. */
-.gr-layout-head:nth-child(2) {
-    text-align: left;
+.gr-layout-grip {
+    flex: 0 0 12px;
+    text-align: center;
+    opacity: 0.4;
+    cursor: grab;
+}
+
+.gr-layout-grip:active {
+    cursor: grabbing;
+}
+
+/* The header's grip cell is a spacer, not a handle. */
+.gr-layout-head .gr-layout-grip {
+    cursor: default;
+}
+
+.gr-layout-card {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
 }
 
 .gr-layout-check {
+    flex: 0 0 60px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -774,6 +801,7 @@
 }
 
 .gr-layout-greeting {
+    flex: 0 0 38%;
     min-width: 0;
     height: auto;
     margin: 0;
@@ -781,8 +809,24 @@
     font-size: calc(var(--mainFontSize) * 0.8);
 }
 
-.gr-layout-span {
-    grid-column: 1 / -1;
+/* The header's greeting cell shares the column width but none of the select's
+   own chrome. */
+span.gr-layout-greeting {
+    padding: 0;
+    font-size: inherit;
+    text-align: center;
+}
+
+/* forcePlaceholderSize keeps the gap the height of the row being moved. */
+.gr-layout-placeholder {
+    border: 1px dashed var(--SmartThemeBorderColor);
+    border-radius: 4px;
+    opacity: 0.6;
+}
+
+.gr-layout-row.ui-sortable-helper {
+    background-color: var(--black30a, rgba(0, 0, 0, 0.3));
+    border-radius: 4px;
 }
 
 #gr_layout_body {

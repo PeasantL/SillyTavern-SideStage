@@ -41,7 +41,7 @@ import {
     unshallowGroupMembers,
     select_group_chats,
 } from '../../../group-chats.js';
-import { waitUntilCondition, uuidv4 } from '../../../utils.js';
+import { waitUntilCondition, uuidv4, getSortableDelay } from '../../../utils.js';
 import { t } from '../../../i18n.js';
 import { Popup } from '../../../popup.js';
 
@@ -75,6 +75,7 @@ let focusedAvatar = null;
  * @property {string} name
  * @property {string} note Author's Note for this scene; blank falls back to the group's
  * @property {string} narrator Scene-setting text posted before the greetings; blank for none
+ * @property {string[]} order Avatar file names, in the order the scene opens
  * @property {Record<string, LayoutEntry>} cards Keyed by avatar file name; absent means inactive
  */
 
@@ -155,6 +156,9 @@ function getSettings() {
             if (typeof layout.narrator !== 'string') {
                 layout.narrator = '';
             }
+            if (!Array.isArray(layout.order)) {
+                layout.order = [];
+            }
             if (!layout.cards || typeof layout.cards !== 'object') {
                 layout.cards = {};
             }
@@ -224,6 +228,25 @@ function getSettingsRoster() {
  */
 function getActiveLayout(roster) {
     return roster?.layouts.find(x => x.id === roster.activeLayoutId) ?? null;
+}
+
+/**
+ * The roster's cards in the order this layout opens with.
+ *
+ * Stored as a plain list of avatars and reconciled against the roster on every
+ * read, so cards removed from the roster fall out and cards added to it appear
+ * at the end. That means an unsorted layout, or one whose roster has grown,
+ * still has a complete order without anything having to write one out.
+ * @param {Roster} roster
+ * @param {Layout} layout
+ * @returns {string[]}
+ */
+function getLayoutOrder(roster, layout) {
+    const inRoster = new Set(roster.cards);
+    const ordered = layout.order.filter(avatar => inRoster.has(avatar));
+    const placed = new Set(ordered);
+
+    return [...ordered, ...roster.cards.filter(avatar => !placed.has(avatar))];
 }
 
 /**
@@ -403,8 +426,8 @@ async function setMembership(avatar, shouldBeMember) {
 /**
  * Rewrites the open group's member list to the selected layout's cast.
  *
- * Ordered by the roster rather than by the layout, because greetings are posted
- * in member order: the roster is what decides who opens the scene first.
+ * Written in the layout's own order, because greetings are posted in member
+ * order: dragging a card up the matrix is what moves it earlier in the scene.
  * @returns {Promise<boolean>} Whether the group was actually changed
  */
 async function applyLayoutMembership() {
@@ -421,7 +444,7 @@ async function applyLayoutMembership() {
         return false;
     }
 
-    const wanted = roster.cards.filter(avatar =>
+    const wanted = getLayoutOrder(roster, layout).filter(avatar =>
         getLayoutEntry(layout, avatar).active && getCharacterByAvatar(avatar));
 
     if (wanted.length === group.members.length && wanted.every((x, i) => group.members[i] === x)) {
@@ -1401,15 +1424,27 @@ function makeGreetingSelect(layout, avatar, character, entry) {
 }
 
 /**
- * Appends one card's cells to the matrix. The cells are appended flat rather
- * than wrapped in a row, so every column lines up across cards of any width.
- * @param {HTMLElement} container
+ * Builds one card's row. Rows are real elements rather than cells appended flat
+ * into one grid, because a row has to be draggable as a unit; the columns are
+ * held in line by fixed widths shared with the header instead.
  * @param {Layout} layout
  * @param {string} avatar
+ * @returns {HTMLElement}
  */
-function appendLayoutRow(container, layout, avatar) {
+function makeLayoutRow(layout, avatar) {
     const character = getCharacterByAvatar(avatar);
     const entry = getLayoutEntry(layout, avatar);
+
+    const row = document.createElement('div');
+    row.classList.add('gr-layout-row');
+    row.dataset.avatar = avatar;
+
+    const grip = document.createElement('i');
+    grip.classList.add('fa-solid', 'fa-grip-vertical', 'gr-layout-grip');
+    grip.title = t`Drag to change the order the scene opens in`;
+
+    const card = document.createElement('div');
+    card.classList.add('gr-layout-card');
 
     const thumb = document.createElement('img');
     thumb.classList.add('gr-settings-avatar');
@@ -1424,6 +1459,8 @@ function appendLayoutRow(container, layout, avatar) {
         name.classList.add('gr-card-missing');
         name.title = t`Character file not found`;
     }
+
+    card.append(thumb, name);
 
     const active = makeLayoutCheckbox({
         checked: entry.active,
@@ -1447,7 +1484,8 @@ function appendLayoutRow(container, layout, avatar) {
         },
     });
 
-    container.append(thumb, name, active, greets, makeGreetingSelect(layout, avatar, character, entry));
+    row.append(grip, card, active, greets, makeGreetingSelect(layout, avatar, character, entry));
+    return row;
 }
 
 /** Paints the matrix: who is in the scene, who opens it, and with what. */
@@ -1473,22 +1511,47 @@ function renderLayoutCards() {
 
     if (!roster.cards.length) {
         const empty = document.createElement('div');
-        empty.classList.add('gr-empty', 'gr-layout-span');
+        empty.classList.add('gr-empty');
         empty.textContent = t`This group's roster is empty — add cards above.`;
         container.appendChild(empty);
         return;
     }
 
-    for (const label of ['', t`Card`, t`In scene`, t`Greets`, t`Greeting`]) {
-        const cell = document.createElement('div');
-        cell.classList.add('gr-layout-head');
+    const head = document.createElement('div');
+    head.classList.add('gr-layout-head');
+
+    for (const [label, className] of [['', 'gr-layout-grip'], [t`Card`, 'gr-layout-card'],
+        [t`In scene`, 'gr-layout-check'], [t`Greets`, 'gr-layout-check'], [t`Greeting`, 'gr-layout-greeting']]) {
+        const cell = document.createElement('span');
+        cell.classList.add(className);
         cell.textContent = label;
-        container.appendChild(cell);
+        head.appendChild(cell);
     }
 
-    for (const avatar of roster.cards) {
-        appendLayoutRow(container, layout, avatar);
+    container.appendChild(head);
+
+    for (const avatar of getLayoutOrder(roster, layout)) {
+        container.appendChild(makeLayoutRow(layout, avatar));
     }
+}
+
+/**
+ * Records the order the matrix was dragged into.
+ *
+ * Reads the order back out of the DOM rather than tracking the move, so it
+ * stays right however jQuery UI got there. Nothing is re-rendered: the rows
+ * are already where they belong, and rebuilding them under the widget that
+ * just finished a drag is asking for trouble.
+ */
+function saveLayoutOrder() {
+    const layout = getSettingsLayout();
+
+    if (!layout) {
+        return;
+    }
+
+    layout.order = $('#gr_layout_cards > .gr-layout-row').map((_, row) => row.dataset.avatar).get();
+    saveSettingsDebounced();
 }
 
 /**
@@ -1726,7 +1789,7 @@ function addSettings() {
         }
 
         /** @type {Layout} */
-        const layout = { id: uuidv4(), name: String(name).trim(), note: '', narrator: '', cards: {} };
+        const layout = { id: uuidv4(), name: String(name).trim(), note: '', narrator: '', order: [], cards: {} };
 
         // Seeded from the cast the group has right now, so a new layout starts
         // out doing what the group already does and is edited down from there.
@@ -1808,6 +1871,18 @@ function addSettings() {
 
         layout.narrator = String($(this).val());
         saveSettingsDebounced();
+    });
+
+    // Bound once to the container, which outlives the rows: sortable refreshes
+    // its item list on mousedown, so rebuilding the matrix doesn't strand it.
+    $('#gr_layout_cards').sortable({
+        items: '> .gr-layout-row',
+        handle: '.gr-layout-grip',
+        axis: 'y',
+        placeholder: 'gr-layout-placeholder',
+        forcePlaceholderSize: true,
+        delay: getSortableDelay(),
+        stop: saveLayoutOrder,
     });
 
     $('#gr_settings_search').on('input', renderRosterLists);
