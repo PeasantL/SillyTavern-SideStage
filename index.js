@@ -2151,6 +2151,11 @@ function getLastSpeakerAvatar(ctx) {
   return null;
 }
 
+// The member the group loop has just handed the turn to, held from the moment
+// they are drafted until their reply lands, so the viewer changes over as the
+// turn starts rather than when the response has finished generating.
+let draftedAvatar = null;
+
 // A group chat has no characterId, so resolve its members instead.
 function getActiveCharacters(ctx) {
   if (!ctx) return [];
@@ -2161,10 +2166,11 @@ function getActiveCharacters(ctx) {
     if (!Array.isArray(members)) return [];
 
     // Show one member's images rather than the whole group's: a roster pin wins,
-    // otherwise whoever spoke last. Both are checked against the member list, so
-    // a pin or a speaker who has since left the group falls through to the group
-    // as a whole — as does a chat where nobody has spoken yet.
-    const only = [focusedAvatar, getLastSpeakerAvatar(ctx)].find(
+    // then whoever is taking the turn right now, then whoever spoke last. All
+    // three are checked against the member list, so a pin or a speaker who has
+    // since left the group falls through to the group as a whole — as does a
+    // chat where nobody has spoken yet.
+    const only = [focusedAvatar, draftedAvatar, getLastSpeakerAvatar(ctx)].find(
       (avatar) => avatar && members.includes(avatar),
     );
 
@@ -2636,6 +2642,7 @@ function handleContextChange() {
   lastScannedCharName = "";
   lastViewedByIdentity.clear();
   viewerIdentityKey = null;
+  draftedAvatar = null;
   if (key === null) return;
 
   const result = scanAndGetImages();
@@ -2656,6 +2663,26 @@ function retargetToGreeting() {
   if (!viewerState || $(`#${SINGLE_VIEWER_ID}`).length === 0) return;
   const index = getGreetingImageIndex(viewerState.images);
   if (index >= 0) updateImage(index);
+}
+
+/**
+ * A member has been drafted to speak. Switching here rather than on the
+ * rendered message means the images change as the turn opens, not once the
+ * reply is complete.
+ * @param {number} chId Index into the character list
+ */
+function handleMemberDrafted(chId) {
+  const avatar = (getSTContext()?.characters || [])[chId]?.avatar;
+  if (!avatar || avatar === draftedAvatar) return;
+  draftedAvatar = avatar;
+  refocusViewer();
+}
+
+// The turn is over: hand the viewer back to ordinary last-speaker resolution,
+// which lands on this same member when they actually posted, and on the
+// previous one when the generation was aborted.
+function clearDraftedAvatar() {
+  draftedAvatar = null;
 }
 
 function handleMessageSwiped(mesId) {
@@ -2781,6 +2808,9 @@ function initImages() {
     eventSource.on(eventTypes.CHARACTER_EDITED, onContentUpdate);
     eventSource.on(eventTypes.GROUP_UPDATED, onContentUpdate);
     eventSource.on(eventTypes.MESSAGE_SWIPED, handleMessageSwiped);
+    eventSource.on(eventTypes.GROUP_MEMBER_DRAFTED, handleMemberDrafted);
+    eventSource.on(eventTypes.GENERATION_ENDED, clearDraftedAvatar);
+    eventSource.on(eventTypes.GENERATION_STOPPED, clearDraftedAvatar);
     eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, refocusViewer);
     eventSource.on(eventTypes.MESSAGE_DELETED, refocusViewer);
   } else {
