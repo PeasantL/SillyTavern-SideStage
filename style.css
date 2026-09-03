@@ -420,9 +420,13 @@
   z-index: 500;
 }
 
+/* Matched to .gr-header, value for value: the gallery replaces the roster in
+   the same slot, and a header that changed height as it did would read as the
+   panel jumping rather than swapping. */
 .civ-header {
   background-color: var(--smart-app-bar-color, #2a2a2a);
-  padding: 8px 12px;
+  padding: 5px 10px;
+  font-size: calc(var(--mainFontSize) * 1.1);
   display: flex;
   justify-content: space-between;
   align-items: center;
