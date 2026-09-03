@@ -118,18 +118,6 @@
     font-size: 0.9em;
 }
 
-/* Icon only: it sits beside a labelled toggle, and the footer is narrow. */
-#groupRosterGallery {
-    flex: 0 0 auto;
-    padding: 2px 8px;
-    font-size: calc(var(--mainFontSize) * 0.9);
-    opacity: 0.6;
-}
-
-#groupRosterGallery:hover {
-    opacity: 1;
-}
-
 .gr-footer-toggle input {
     display: none;
 }
