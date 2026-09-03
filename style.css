@@ -742,6 +742,55 @@
     margin: 0;
 }
 
+/* Cells are appended flat rather than wrapped in a row, so the five columns
+   line up across cards whose names are any width. The greeting column takes
+   what is left and truncates rather than widening the drawer. */
+.gr-layout-grid {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto minmax(0, 1.6fr);
+    align-items: center;
+    gap: 4px 8px;
+    margin-top: 4px;
+}
+
+.gr-layout-head {
+    font-size: calc(var(--mainFontSize) * 0.75);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.5;
+    text-align: center;
+}
+
+/* The two name columns read left, not centred like the checkbox headers. */
+.gr-layout-head:nth-child(2) {
+    text-align: left;
+}
+
+.gr-layout-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+}
+
+.gr-layout-greeting {
+    min-width: 0;
+    height: auto;
+    margin: 0;
+    padding: 2px 6px;
+    font-size: calc(var(--mainFontSize) * 0.8);
+}
+
+.gr-layout-span {
+    grid-column: 1 / -1;
+}
+
+#gr_layout_body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
 .ss-settings-divider {
     height: 1px;
     margin: 12px 0;

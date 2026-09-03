@@ -20,6 +20,7 @@ import {
     menu_type,
     sendMessageAsUser,
     extractMessageBias,
+    unshallowCharacter,
 } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import {
@@ -48,9 +49,28 @@ const PANEL_ID = 'groupRoster';
 let focusedAvatar = null;
 
 /**
+ * @typedef {object} LayoutEntry
+ * @property {boolean} active Whether the card is in the group for this scene
+ * @property {boolean} greets Whether the card posts an opening message
+ * @property {number|null} greeting Index into the card's group greetings, or null for random
+ */
+
+/**
+ * A way to open a scene with this group's cast. Card order is the roster's, so
+ * a layout only stores what varies: who is in it, who speaks, and with what.
+ * @typedef {object} Layout
+ * @property {string} id
+ * @property {string} name
+ * @property {string} note Author's Note for this scene; blank falls back to the group's
+ * @property {Record<string, LayoutEntry>} cards Keyed by avatar file name; absent means inactive
+ */
+
+/**
  * @typedef {object} Roster
  * @property {string[]} cards Avatar file names in this group's pool, in display order
  * @property {string} note Author's Note the footer toggle fills the chat with
+ * @property {Layout[]} layouts Scenes that can be opened with this cast
+ * @property {string} activeLayoutId Id of the selected layout, or '' for none
  */
 
 const rosterDefaults = {
@@ -108,6 +128,27 @@ function getSettings() {
         if (typeof roster.note !== 'string') {
             roster.note = '';
         }
+        if (!Array.isArray(roster.layouts)) {
+            roster.layouts = [];
+        }
+        if (typeof roster.activeLayoutId !== 'string') {
+            roster.activeLayoutId = '';
+        }
+
+        for (const layout of roster.layouts) {
+            if (typeof layout.note !== 'string') {
+                layout.note = '';
+            }
+            if (!layout.cards || typeof layout.cards !== 'object') {
+                layout.cards = {};
+            }
+        }
+
+        // A layout deleted from another tab, or settings rolled back, must not
+        // leave the roster pointing at nothing.
+        if (!roster.layouts.some(x => x.id === roster.activeLayoutId)) {
+            roster.activeLayoutId = '';
+        }
     }
 
     return settings;
@@ -159,6 +200,78 @@ function getSettingsGroupId() {
 /** @returns {Roster|null} The roster the settings drawer edits. */
 function getSettingsRoster() {
     return getRoster(getSettingsGroupId());
+}
+
+/**
+ * @param {Roster|null} roster
+ * @returns {Layout|null} The roster's selected layout, or null when none is.
+ */
+function getActiveLayout(roster) {
+    return roster?.layouts.find(x => x.id === roster.activeLayoutId) ?? null;
+}
+
+/**
+ * A card's settings within a layout. Cards added to the roster after the layout
+ * was built are absent, and default to sitting the scene out, so growing the
+ * roster never quietly rewrites an existing scene.
+ * @param {Layout} layout
+ * @param {string} avatar
+ * @returns {LayoutEntry}
+ */
+function getLayoutEntry(layout, avatar) {
+    return layout.cards[avatar] ?? { active: false, greets: false, greeting: null };
+}
+
+/**
+ * Writes part of a card's layout entry back, creating it if needed.
+ * @param {Layout} layout
+ * @param {string} avatar
+ * @param {Partial<LayoutEntry>} patch
+ */
+function setLayoutEntry(layout, avatar, patch) {
+    const entry = Object.assign(getLayoutEntry(layout, avatar), patch);
+
+    // Speaking, and which greeting to speak, only mean anything for a card that
+    // is in the scene at all.
+    if (!entry.active) {
+        entry.greets = false;
+        entry.greeting = null;
+    }
+
+    layout.cards[avatar] = entry;
+    saveSettingsDebounced();
+}
+
+/**
+ * The greetings a card can open a group scene with.
+ *
+ * Deliberately only the group-only pool, never first_mes or the ordinary
+ * alternate greetings: pinning a scene's opening line is a promise about what
+ * appears, and the ordinary greetings are written for a solo chat. A card with
+ * no group greetings simply can't be pinned, and falls through to whatever ST
+ * would have done.
+ *
+ * Precedence matches Extension-GroupGreetings' own reader so both agree on
+ * which list is in play: Spec v3 group_only_greetings, with the legacy
+ * extensions.group_greetings used only when v3 is present but empty.
+ * @param {object} [character]
+ * @returns {string[]}
+ */
+function getGroupGreetings(character) {
+    const clean = (list) => list.filter(x => typeof x === 'string' && x.trim().length);
+    const specV3 = character?.data?.group_only_greetings;
+    const legacy = character?.data?.extensions?.group_greetings;
+
+    if (Array.isArray(specV3) && Array.isArray(legacy) && legacy.length && !specV3.length) {
+        return clean(legacy);
+    }
+    if (Array.isArray(specV3)) {
+        return clean(specV3);
+    }
+    if (Array.isArray(legacy)) {
+        return clean(legacy);
+    }
+    return [];
 }
 
 /**
@@ -349,13 +462,25 @@ function setChatAuthorsNote(text) {
 }
 
 /**
- * Whether the active roster's note is currently the chat's Author's Note.
- * Derived from the live field rather than stored, so the toggle still tells
- * the truth after the note is edited by hand or the chat is switched.
+ * The note the footer toggle applies: the selected layout's, falling back to
+ * the group's. A layout's note is an override for one scene, so a blank one
+ * means "use the group's" rather than "no note".
+ * @returns {string}
+ */
+function getEffectiveNote() {
+    const roster = getActiveRoster();
+    return getActiveLayout(roster)?.note || roster?.note || '';
+}
+
+/**
+ * Whether the note for the open group and layout is currently the chat's
+ * Author's Note. Derived from the live field rather than stored, so the toggle
+ * still tells the truth after the note is edited by hand or the chat is
+ * switched.
  * @returns {boolean}
  */
 function isNoteApplied() {
-    const note = getActiveRoster()?.note ?? '';
+    const note = getEffectiveNote();
     return Boolean(note) && getChatAuthorsNote() === note;
 }
 
@@ -375,14 +500,14 @@ function setFocusedAvatar(avatar) {
 }
 
 function setNoteApplied(shouldApply) {
-    const roster = getActiveRoster();
+    const note = getEffectiveNote();
 
-    if (shouldApply && !roster?.note) {
+    if (shouldApply && !note) {
         toastr.info(t`This group has no Author's Note. Set one in Extensions → SideStage.`);
         return;
     }
 
-    setChatAuthorsNote(shouldApply ? roster.note : '');
+    setChatAuthorsNote(shouldApply ? note : '');
     refreshPanel();
 }
 
@@ -552,6 +677,62 @@ function makeCardRow(avatar) {
     return row;
 }
 
+/**
+ * Switches the open group's layout and brings every view of it back in step.
+ * Shared by the panel footer's picker and the settings drawer's.
+ * @param {string} id
+ */
+function setActiveLayout(id) {
+    const roster = getActiveRoster();
+
+    if (!roster) {
+        return;
+    }
+
+    roster.activeLayoutId = String(id);
+    saveSettingsDebounced();
+    renderSettings();
+    refreshPanel();
+}
+
+/**
+ * Repaints the footer's layout picker, but only when the list itself changed:
+ * refreshPanel() runs on every generation event, and rebuilding the options
+ * each time would shut the dropdown under the user mid-choice. The group is
+ * part of the signature so two groups with same-named layouts still swap.
+ */
+function refreshLayoutPicker() {
+    const picker = /** @type {HTMLSelectElement} */ (document.getElementById('groupRosterLayoutPicker'));
+
+    if (!picker) {
+        return;
+    }
+
+    const roster = getActiveRoster();
+    const layouts = roster?.layouts ?? [];
+    const signature = [getCurrentGroup()?.id ?? '', ...layouts.map(x => `${x.id}:${x.name}`)].join('\u0000');
+
+    if (picker.dataset.signature !== signature) {
+        picker.dataset.signature = signature;
+        picker.innerHTML = '';
+
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = t`No layout`;
+        picker.appendChild(none);
+
+        for (const layout of layouts) {
+            const option = document.createElement('option');
+            option.value = layout.id;
+            option.textContent = layout.name;
+            picker.appendChild(option);
+        }
+    }
+
+    picker.value = roster?.activeLayoutId ?? '';
+    picker.disabled = !roster;
+}
+
 /** Re-renders the card list inside an already open panel. */
 function refreshPanel() {
     const list = document.getElementById('groupRosterList');
@@ -572,8 +753,10 @@ function refreshPanel() {
     const noteToggle = /** @type {HTMLInputElement} */ (document.querySelector('#groupRosterNoteToggle input'));
     if (noteToggle) {
         noteToggle.checked = isNoteApplied();
-        noteToggle.disabled = !getActiveRoster()?.note;
+        noteToggle.disabled = !getEffectiveNote();
     }
+
+    refreshLayoutPicker();
 
     if (!cards.length) {
         const empty = document.createElement('div');
@@ -617,6 +800,8 @@ function openPanel() {
                     <i class="fa-solid fa-note-sticky fa-fw"></i>
                     <span>${t`Author's Note`}</span>
                 </label>
+                <select id="groupRosterLayoutPicker" class="gr-footer-select"
+                        title="${t`Greeting layout used when this group starts a new chat`}"></select>
             </div>
         </div>`;
 
@@ -625,6 +810,10 @@ function openPanel() {
 
     $win.find('#groupRosterNoteToggle input').on('change', function () {
         setNoteApplied(this.checked);
+    });
+
+    $win.find('#groupRosterLayoutPicker').on('change', function () {
+        setActiveLayout(String($(this).val()));
     });
 
     refreshPanel();
@@ -672,6 +861,31 @@ const settingsHtml = `
                         <input id="gr_settings_search" type="search" class="text_pole" placeholder="Search characters...">
                         <div id="gr_out_list" class="gr-settings-list"></div>
                     </div>
+                </div>
+            </div>
+
+            <div class="ss-settings-divider"></div>
+
+            <div class="ss-settings-section">
+                <div class="ss-settings-heading">Greeting layouts</div>
+                <label for="gr_layout_select">Layout for this group</label>
+                <div class="flex-container alignItemsCenter">
+                    <select id="gr_layout_select" class="text_pole flex1"></select>
+                    <div id="gr_layout_new" class="menu_button menu_button_icon interactable" title="New layout">
+                        <i class="fa-solid fa-plus fa-fw"></i>
+                    </div>
+                    <div id="gr_layout_rename" class="menu_button menu_button_icon interactable" title="Rename layout">
+                        <i class="fa-solid fa-pen fa-fw"></i>
+                    </div>
+                    <div id="gr_layout_delete" class="menu_button menu_button_icon interactable" title="Delete layout">
+                        <i class="fa-solid fa-trash fa-fw"></i>
+                    </div>
+                </div>
+                <div id="gr_layout_body">
+                    <label for="gr_layout_note">Author's Note for this layout</label>
+                    <textarea id="gr_layout_note" class="text_pole textarea_compact" rows="3"
+                              placeholder="Overrides the group's note while this layout is selected"></textarea>
+                    <div id="gr_layout_cards" class="gr-layout-grid"></div>
                 </div>
             </div>
 
@@ -750,6 +964,243 @@ function renderLegacyImport() {
     }
 }
 
+/** @returns {Layout|null} The layout the settings drawer edits. */
+function getSettingsLayout() {
+    return getActiveLayout(getSettingsRoster());
+}
+
+/** True while roster cards are being loaded, so the repaint can't loop. */
+let loadingCardData = false;
+
+/**
+ * Roster cards that aren't group members are shallow, and a shallow card has no
+ * data.group_only_greetings to list — the greeting column would read as "no
+ * group greetings" for every card on the bench. Loads them once and repaints.
+ * @param {Roster|null} roster
+ */
+function ensureGreetingsLoaded(roster) {
+    if (loadingCardData || !roster) {
+        return;
+    }
+
+    const pending = roster.cards
+        .map(avatar => characters.findIndex(x => x.avatar === avatar))
+        .filter(chid => chid !== -1 && characters[chid]?.shallow);
+
+    if (!pending.length) {
+        return;
+    }
+
+    loadingCardData = true;
+
+    (async () => {
+        try {
+            for (const chid of pending) {
+                await unshallowCharacter(chid);
+            }
+        } catch (error) {
+            console.error('[SideStage] Could not load card data for the layout editor', error);
+        } finally {
+            loadingCardData = false;
+            renderLayoutCards();
+        }
+    })();
+}
+
+/** Fills the layout dropdown for whichever group the drawer is showing. */
+function renderLayoutSelect() {
+    const roster = getSettingsRoster();
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_layout_select'));
+
+    if (!select) {
+        return;
+    }
+
+    select.innerHTML = '';
+    select.disabled = !roster;
+
+    // Always offered: a group with no layout selected is left entirely alone,
+    // which is the only way back to stock behaviour once layouts exist.
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = t`No layout`;
+    select.appendChild(none);
+
+    for (const layout of roster?.layouts ?? []) {
+        const option = document.createElement('option');
+        option.value = layout.id;
+        option.textContent = layout.name;
+        select.appendChild(option);
+    }
+
+    select.value = roster?.activeLayoutId ?? '';
+    $('#gr_layout_new').toggleClass('disabled', !roster);
+    $('#gr_layout_rename').toggleClass('disabled', !getSettingsLayout());
+    $('#gr_layout_delete').toggleClass('disabled', !getSettingsLayout());
+}
+
+/**
+ * Builds one checkbox cell of the layout matrix.
+ * @param {{checked: boolean, disabled: boolean, title: string, onChange: function(boolean): void}} options
+ * @returns {HTMLLabelElement}
+ */
+function makeLayoutCheckbox({ checked, disabled, title, onChange }) {
+    const cell = document.createElement('label');
+    cell.classList.add('gr-layout-check');
+    cell.title = title;
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = checked;
+    input.disabled = disabled;
+    input.addEventListener('change', () => onChange(input.checked));
+
+    cell.appendChild(input);
+    return cell;
+}
+
+/**
+ * Builds the greeting picker for one card. Only group greetings are offered;
+ * a card without any can still greet, just not from a pinned line.
+ * @param {Layout} layout
+ * @param {string} avatar
+ * @param {object} [character]
+ * @param {LayoutEntry} entry
+ * @returns {HTMLSelectElement}
+ */
+function makeGreetingSelect(layout, avatar, character, entry) {
+    const select = document.createElement('select');
+    select.classList.add('text_pole', 'gr-layout-greeting');
+    const greetings = getGroupGreetings(character);
+
+    if (!greetings.length) {
+        const option = document.createElement('option');
+        option.textContent = t`No group greetings`;
+        select.appendChild(option);
+        select.disabled = true;
+        select.title = t`Only group greetings can be pinned. Add some from the button beside Alt. Greetings on the card.`;
+        return select;
+    }
+
+    const random = document.createElement('option');
+    random.value = '';
+    random.textContent = t`Random`;
+    select.appendChild(random);
+
+    greetings.forEach((text, index) => {
+        const option = document.createElement('option');
+        option.value = String(index);
+        const summary = text.replace(/\s+/g, ' ').trim();
+        option.textContent = `${index + 1}. ${summary.length > 60 ? `${summary.slice(0, 60)}…` : summary}`;
+        option.title = text;
+        select.appendChild(option);
+    });
+
+    // A pin past the end of an edited card's list reads as random rather than
+    // silently becoming whichever greeting slid into that index.
+    const pinned = Number.isInteger(entry.greeting) && entry.greeting < greetings.length ? entry.greeting : null;
+    select.value = pinned === null ? '' : String(pinned);
+    select.disabled = !entry.greets;
+    select.title = t`Which group greeting this card opens with`;
+
+    select.addEventListener('change', () => {
+        setLayoutEntry(layout, avatar, { greeting: select.value === '' ? null : Number(select.value) });
+    });
+
+    return select;
+}
+
+/**
+ * Appends one card's cells to the matrix. The cells are appended flat rather
+ * than wrapped in a row, so every column lines up across cards of any width.
+ * @param {HTMLElement} container
+ * @param {Layout} layout
+ * @param {string} avatar
+ */
+function appendLayoutRow(container, layout, avatar) {
+    const character = getCharacterByAvatar(avatar);
+    const entry = getLayoutEntry(layout, avatar);
+
+    const thumb = document.createElement('img');
+    thumb.classList.add('gr-settings-avatar');
+    thumb.src = getThumbnailUrl('avatar', avatar);
+    thumb.alt = character?.name ?? avatar;
+
+    const name = document.createElement('span');
+    name.classList.add('gr-settings-name');
+    name.textContent = character?.name ?? avatar;
+
+    if (!character) {
+        name.classList.add('gr-card-missing');
+        name.title = t`Character file not found`;
+    }
+
+    const active = makeLayoutCheckbox({
+        checked: entry.active,
+        disabled: !character,
+        title: t`In the group while this layout is selected`,
+        onChange: (checked) => {
+            // Being in the scene implies opening it; uncheck Greets to have a
+            // card present from the start without a line of its own.
+            setLayoutEntry(layout, avatar, { active: checked, greets: checked });
+            renderLayoutCards();
+        },
+    });
+
+    const greets = makeLayoutCheckbox({
+        checked: entry.greets,
+        disabled: !character || !entry.active,
+        title: t`Posts an opening message when a new chat starts`,
+        onChange: (checked) => {
+            setLayoutEntry(layout, avatar, { greets: checked });
+            renderLayoutCards();
+        },
+    });
+
+    container.append(thumb, name, active, greets, makeGreetingSelect(layout, avatar, character, entry));
+}
+
+/** Paints the matrix: who is in the scene, who opens it, and with what. */
+function renderLayoutCards() {
+    const body = document.getElementById('gr_layout_body');
+    const container = document.getElementById('gr_layout_cards');
+
+    if (!body || !container) {
+        return;
+    }
+
+    const roster = getSettingsRoster();
+    const layout = getSettingsLayout();
+
+    body.style.display = layout ? '' : 'none';
+
+    if (!layout) {
+        return;
+    }
+
+    ensureGreetingsLoaded(roster);
+    container.innerHTML = '';
+
+    if (!roster.cards.length) {
+        const empty = document.createElement('div');
+        empty.classList.add('gr-empty', 'gr-layout-span');
+        empty.textContent = t`This group's roster is empty — add cards above.`;
+        container.appendChild(empty);
+        return;
+    }
+
+    for (const label of ['', t`Card`, t`In scene`, t`Greets`, t`Greeting`]) {
+        const cell = document.createElement('div');
+        cell.classList.add('gr-layout-head');
+        cell.textContent = label;
+        container.appendChild(cell);
+    }
+
+    for (const avatar of roster.cards) {
+        appendLayoutRow(container, layout, avatar);
+    }
+}
+
 /**
  * Builds one row for either settings list.
  * @param {object} character Character object
@@ -794,6 +1245,7 @@ function makeSettingsRow(character, isMember) {
         saveSettingsDebounced();
         renderGroupSelect();
         renderRosterLists();
+        renderLayoutCards();
         refreshPanel();
     };
 
@@ -880,7 +1332,10 @@ function renderSettings() {
     renderGroupSelect();
     renderLegacyImport();
     renderRosterLists();
+    renderLayoutSelect();
+    renderLayoutCards();
     $('#gr_roster_note').val(getSettingsRoster()?.note ?? '').prop('disabled', !getSettingsRoster());
+    $('#gr_layout_note').val(getSettingsLayout()?.note ?? '');
 }
 
 function addSettings() {
@@ -942,6 +1397,107 @@ function addSettings() {
         saveSettingsDebounced();
         // The footer toggle greys out for a group with no note, and its checked
         // state compares against this text.
+        refreshPanel();
+    });
+
+    $('#gr_layout_select').on('change', function () {
+        const roster = getSettingsRoster();
+
+        if (!roster) {
+            return;
+        }
+
+        roster.activeLayoutId = String($(this).val());
+        saveSettingsDebounced();
+        renderSettings();
+        refreshPanel();
+    });
+
+    $('#gr_layout_new').on('click', async () => {
+        const roster = getSettingsRoster();
+
+        if (!roster) {
+            toastr.warning(t`Create a group chat first.`);
+            return;
+        }
+
+        const name = await Popup.show.input(t`New layout`, t`Name for the new layout`, '');
+
+        if (!name) {
+            return;
+        }
+
+        /** @type {Layout} */
+        const layout = { id: uuidv4(), name: String(name).trim(), note: '', cards: {} };
+
+        // Seeded from the cast the group has right now, so a new layout starts
+        // out doing what the group already does and is edited down from there.
+        const group = groups.find(x => x.id === getSettingsGroupId());
+
+        for (const avatar of roster.cards) {
+            if (group?.members?.includes(avatar)) {
+                layout.cards[avatar] = { active: true, greets: true, greeting: null };
+            }
+        }
+
+        roster.layouts.push(layout);
+        roster.activeLayoutId = layout.id;
+        saveSettingsDebounced();
+        renderSettings();
+        refreshPanel();
+    });
+
+    $('#gr_layout_rename').on('click', async () => {
+        const layout = getSettingsLayout();
+
+        if (!layout) {
+            return;
+        }
+
+        const name = await Popup.show.input(t`Rename layout`, t`New name`, layout.name);
+
+        if (!name) {
+            return;
+        }
+
+        layout.name = String(name).trim();
+        saveSettingsDebounced();
+        renderLayoutSelect();
+        refreshPanel();
+    });
+
+    $('#gr_layout_delete').on('click', async () => {
+        const roster = getSettingsRoster();
+        const layout = getSettingsLayout();
+
+        if (!roster || !layout) {
+            return;
+        }
+
+        const confirmed = await Popup.show.confirm(t`Delete layout`, t`Delete "${layout.name}"?`);
+
+        if (!confirmed) {
+            return;
+        }
+
+        roster.layouts = roster.layouts.filter(x => x.id !== layout.id);
+        roster.activeLayoutId = '';
+        saveSettingsDebounced();
+        renderSettings();
+        refreshPanel();
+    });
+
+    $('#gr_layout_note').on('input', function () {
+        const layout = getSettingsLayout();
+
+        if (!layout) {
+            return;
+        }
+
+        layout.note = String($(this).val());
+        saveSettingsDebounced();
+        // The footer toggle prefers this note over the group's, and its checked
+        // state compares against whichever is in play.
         refreshPanel();
     });
 
