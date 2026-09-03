@@ -12,9 +12,9 @@
    The space kept for the viewer is a static reserve rather than a live
    measurement of it: the viewer re-shapes itself to every image's aspect ratio,
    so tracking it would make the roster grow and shrink on every swipe. The
-   reserve is 35dvh, which is under the viewer's own 50dvh height cap — a tall
-   image will slide behind the dock's lower edge, and the viewer's z-index puts
-   it in front when it does.
+   reserve is 45dvh, just under the viewer's own 50dvh height cap, so only the
+   tallest images reach behind the dock's lower edge — and the viewer's z-index
+   puts it in front when one does.
 
    The span is top + height, never `bottom`. Core sets -webkit-transform on
    <html> (style.css, the blur-flicker fix), which makes <html> the containing
@@ -28,9 +28,9 @@
     position: fixed;
     right: 0;
     top: calc(var(--topBarBlockSize, 40px) + 8px);
-    /* 100dvh - top - (35dvh reserved for the viewer + 8px breathing room) */
-    height: calc(65vh - var(--topBarBlockSize, 40px) - 16px);
-    height: calc(65dvh - var(--topBarBlockSize, 40px) - 16px);
+    /* 100dvh - top - (45dvh reserve + 24px spawn gap + 8px breathing room) */
+    height: calc(55vh - var(--topBarBlockSize, 40px) - 40px);
+    height: calc(55dvh - var(--topBarBlockSize, 40px) - 40px);
     min-height: 160px;
     width: 20vw;
     min-width: 220px;
@@ -67,16 +67,33 @@
     z-index: 500;
 }
 
-.gr-header {
+/* One rule for both headers, not two matched sets. They swap in the same slot,
+   so any drift between them reads as the panel jumping — and matched-by-hand
+   declarations had already drifted once.
+
+   line-height is the point of it: without one, the line box grows to fit the
+   tallest glyph on the line, and the gallery's heavy multiplication X (U+2716)
+   is taller than plain text. Identical padding and font-size still gave the
+   gallery a taller header. Pinning line-height makes the box height a function
+   of the rule rather than of the characters that happen to be in it. */
+.gr-header,
+.civ-header {
     background-color: var(--smart-app-bar-color, #2a2a2a);
     padding: 5px 10px;
     font-size: calc(var(--mainFontSize) * 1.1);
+    line-height: 1.4;
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-weight: bold;
     border-bottom: 1px solid #444;
     color: var(--smart-text-color, #eee);
+}
+
+/* Inherits the header's line-height so the glyph cannot reopen the gap. */
+.civ-close-btn {
+    font-size: 0.85em;
+    line-height: inherit;
 }
 
 .gr-title {
@@ -454,21 +471,6 @@
   border-radius: 8px;
   overflow: hidden;
   z-index: 500;
-}
-
-/* Matched to .gr-header, value for value: the gallery replaces the roster in
-   the same slot, and a header that changed height as it did would read as the
-   panel jumping rather than swapping. */
-.civ-header {
-  background-color: var(--smart-app-bar-color, #2a2a2a);
-  padding: 5px 10px;
-  font-size: calc(var(--mainFontSize) * 1.1);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: bold;
-  border-bottom: 1px solid #444;
-  color: var(--smart-text-color, #eee);
 }
 
 /* ── IMAGE Window (Transparent + Slideshow) ── */
