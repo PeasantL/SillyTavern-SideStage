@@ -48,6 +48,16 @@
     z-index: 501;
 }
 
+/* Hover feedback is gated behind (hover: hover). On a touch screen :hover
+   latches after a tap and never clears, so tapped roster cards, settings rows
+   and thumbnails all stayed lit at once — several characters looking active
+   when only one was.
+
+   The three .civ-window-frameless:hover rules are deliberately NOT gated: that
+   sticky hover is the only thing keeping the viewer's overlay controls, nav
+   arrows and resize grip on screen after a tap. Gating them would hide the
+   viewer's controls on touch for good. */
+
 /* ═══════════════════════ Group roster ═══════════════════════ */
 
 /* ---- Window ------------------------------------------------------------- */
@@ -170,8 +180,10 @@
     cursor: not-allowed;
 }
 
-.gr-footer-toggle:has(input:disabled):hover {
-    background: rgba(255, 255, 255, 0.08);
+@media (hover: hover) {
+  .gr-footer-toggle:has(input:disabled):hover {
+      background: rgba(255, 255, 255, 0.08);
+  }
 }
 
 .gr-footer-btn {
@@ -187,8 +199,10 @@
     transition: background-color 0.2s;
 }
 
-.gr-footer-btn:hover {
-    background: rgba(255, 255, 255, 0.18);
+@media (hover: hover) {
+  .gr-footer-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+  }
 }
 
 .gr-footer-btn:focus-visible {
@@ -230,8 +244,10 @@
     color: var(--smart-text-color, #eee);
 }
 
-.gr-card:hover {
-    background: rgba(255, 255, 255, 0.08);
+@media (hover: hover) {
+  .gr-card:hover {
+      background: rgba(255, 255, 255, 0.08);
+  }
 }
 
 .gr-card.gr-speaking {
@@ -315,9 +331,11 @@
     pointer-events: none;
 }
 
-.gr-icon-toggle:hover {
-    opacity: 1;
-    background: rgba(255, 255, 255, 0.15);
+@media (hover: hover) {
+  .gr-icon-toggle:hover {
+      opacity: 1;
+      background: rgba(255, 255, 255, 0.15);
+  }
 }
 
 .gr-icon-toggle:has(input:checked) {
@@ -393,8 +411,10 @@
     opacity: 0.5;
 }
 
-.gr-settings-row:hover .gr-settings-action {
-    opacity: 1;
+@media (hover: hover) {
+  .gr-settings-row:hover .gr-settings-action {
+      opacity: 1;
+  }
 }
 
 .gr-settings-row:focus-visible {
@@ -419,13 +439,17 @@
     font-size: calc(var(--mainFontSize) * 0.9);
 }
 
-.menu_button.gr-flat-button:hover {
-    opacity: 1;
-    background-color: var(--white20a);
+@media (hover: hover) {
+  .menu_button.gr-flat-button:hover {
+      opacity: 1;
+      background-color: var(--white20a);
+  }
 }
 
-.gr-settings-row:hover {
-    background-color: var(--white20a);
+@media (hover: hover) {
+  .gr-settings-row:hover {
+      background-color: var(--white20a);
+  }
 }
 
 .gr-settings-avatar {
@@ -455,9 +479,11 @@
   border: 2px solid transparent;
 }
 
-.civ-thumb:hover {
-  border-color: var(--smart-theme-color, #007bff);
-  transform: scale(1.05);
+@media (hover: hover) {
+  .civ-thumb:hover {
+    border-color: var(--smart-theme-color, #007bff);
+    transform: scale(1.05);
+  }
 }
 
 /* ── GALLERY Window ── */
@@ -521,10 +547,12 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
-.civ-icon-btn:hover {
-  color: white;
-  background: rgba(255, 255, 255, 0.15);
-  text-shadow: none;
+@media (hover: hover) {
+  .civ-icon-btn:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.15);
+    text-shadow: none;
+  }
 }
 
 .civ-drag-handle {
@@ -535,8 +563,10 @@
   cursor: grabbing;
 }
 
-.civ-gallery-btn-round:hover {
-  background: rgba(100, 180, 255, 0.4);
+@media (hover: hover) {
+  .civ-gallery-btn-round:hover {
+    background: rgba(100, 180, 255, 0.4);
+  }
 }
 
 /* ── Navigation Arrows ── */
@@ -562,10 +592,12 @@
   opacity: 1;
 }
 
-.civ-nav-arrow:hover {
-  color: white;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 4px;
+@media (hover: hover) {
+  .civ-nav-arrow:hover {
+    color: white;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+  }
 }
 
 .civ-nav-left {
