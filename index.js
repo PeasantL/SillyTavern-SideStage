@@ -1413,10 +1413,12 @@ function makeGreetingSelect(layout, avatar, character, entry) {
     greetings.forEach((text, index) => {
         const option = document.createElement('option');
         option.value = String(index);
-        // Short enough that the dropdown stays narrow on a phone or tablet; the
-        // full text is on the title for anywhere that shows one.
+        // Long enough to fill the column on a wide drawer; a narrower one clips
+        // it with an ellipsis, and the full text is on the title either way.
+        // Safe to be this long now the cell shrinks rather than the select:
+        // the option text no longer has any say in how wide the row is.
         const summary = text.replace(/\s+/g, ' ').trim();
-        option.textContent = `${index + 1}. ${summary.length > 28 ? `${summary.slice(0, 28)}…` : summary}`;
+        option.textContent = `${index + 1}. ${summary.length > 100 ? `${summary.slice(0, 100)}…` : summary}`;
         option.title = text;
         select.appendChild(option);
     });
