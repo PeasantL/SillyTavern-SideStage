@@ -703,6 +703,12 @@
 
 /* ════════════════════════ Settings drawer ═══════════════════════ */
 
+/* The last section otherwise sits flush against the next extension's header in
+   the panel. Padding rather than display, which ST's slideToggle owns. */
+.sidestage-settings .inline-drawer-content {
+    padding-bottom: 10px;
+}
+
 /* The two halves share one drawer, split by a rule rather than by a second
    collapsible: they are one feature now, and nesting drawers reads badly. */
 .ss-settings-section {
