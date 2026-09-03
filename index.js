@@ -1496,7 +1496,7 @@ function makeLayoutRow(layout, avatar) {
         },
     });
 
-    row.append(grip, active, greets, card, makeGreetingSelect(layout, avatar, character, entry));
+    row.append(grip, card, active, greets, makeGreetingSelect(layout, avatar, character, entry));
     return row;
 }
 
@@ -1532,9 +1532,8 @@ function renderLayoutCards() {
     const head = document.createElement('div');
     head.classList.add('gr-layout-head');
 
-    for (const [label, className] of [['', 'gr-layout-grip'],
-        [t`In scene`, 'gr-layout-check'], [t`Greets`, 'gr-layout-check'],
-        [t`Card`, 'gr-layout-card'], [t`Greeting`, 'gr-layout-greeting']]) {
+    for (const [label, className] of [['', 'gr-layout-grip'], [t`Card`, 'gr-layout-card'],
+        [t`In scene`, 'gr-layout-check'], [t`Greets`, 'gr-layout-check'], [t`Greeting`, 'gr-layout-greeting']]) {
         const cell = document.createElement('span');
         cell.classList.add(className);
         cell.textContent = label;

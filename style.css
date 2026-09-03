@@ -811,10 +811,15 @@
     cursor: default;
 }
 
-/* A share of the drawer rather than the name's own width, which would differ
-   per row and take the alignment with it. Long names ellipsis instead. */
+/* Wide enough for a name and no wider, so the toggles sit near the handle and
+   everything past them is the greeting's. A width the container decides rather
+   than the name's own, which would differ per row and take the alignment with
+   it; long names ellipsis instead. Clamped so it stays legible on a phone and
+   stops hoarding room on a wide screen. */
 .gr-layout-card {
-    flex: 0 0 30%;
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: clamp(90px, 22%, 170px);
     min-width: 0;
     display: flex;
     align-items: center;
