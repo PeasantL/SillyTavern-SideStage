@@ -118,6 +118,21 @@
     font-size: 0.9em;
 }
 
+/* Takes whatever the note toggle leaves, and truncates rather than pushing the
+   footer wider than the dock. */
+.gr-footer-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: auto;
+    margin: 0;
+    padding: 2px 6px;
+    font-size: calc(var(--mainFontSize) * 0.8);
+    border-radius: 4px;
+    color: var(--smart-text-color, #eee);
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
 .gr-footer-toggle input {
     display: none;
 }

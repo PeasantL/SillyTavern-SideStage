@@ -426,6 +426,48 @@ function makeCardRow(avatar) {
     return row;
 }
 
+/**
+ * Switches the active roster and brings every view of it back in step.
+ * Shared by the panel footer's picker and the settings drawer's.
+ * @param {string} id
+ */
+function setActiveRoster(id) {
+    getSettings().activeRosterId = String(id);
+    saveSettingsDebounced();
+    renderSettings();
+    refreshPanel();
+}
+
+/**
+ * Repaints the footer's roster picker, but only when the roster list itself
+ * changed: refreshPanel() runs on every generation event, and rebuilding the
+ * options each time would shut the dropdown under the user mid-choice.
+ */
+function refreshRosterPicker() {
+    const picker = /** @type {HTMLSelectElement} */ (document.getElementById('groupRosterPicker'));
+
+    if (!picker) {
+        return;
+    }
+
+    const settings = getSettings();
+    const signature = settings.rosters.map(x => `${x.id}:${x.name}`).join('\u0000');
+
+    if (picker.dataset.signature !== signature) {
+        picker.dataset.signature = signature;
+        picker.innerHTML = '';
+
+        for (const roster of settings.rosters) {
+            const option = document.createElement('option');
+            option.value = roster.id;
+            option.textContent = roster.name;
+            picker.appendChild(option);
+        }
+    }
+
+    picker.value = settings.activeRosterId;
+}
+
 /** Re-renders the card list inside an already open panel. */
 function refreshPanel() {
     const list = document.getElementById('groupRosterList');
@@ -448,6 +490,8 @@ function refreshPanel() {
         noteToggle.checked = isNoteApplied();
         noteToggle.disabled = !getActiveRoster()?.note;
     }
+
+    refreshRosterPicker();
 
     if (!cards.length) {
         const empty = document.createElement('div');
@@ -491,6 +535,8 @@ function openPanel() {
                     <i class="fa-solid fa-note-sticky fa-fw"></i>
                     <span>${t`Author's Note`}</span>
                 </label>
+                <select id="groupRosterPicker" class="gr-footer-select"
+                        title="${t`Switch the active roster`}"></select>
             </div>
         </div>`;
 
@@ -499,6 +545,10 @@ function openPanel() {
 
     $win.find('#groupRosterNoteToggle input').on('change', function () {
         setNoteApplied(this.checked);
+    });
+
+    $win.find('#groupRosterPicker').on('change', function () {
+        setActiveRoster(String($(this).val()));
     });
 
     refreshPanel();
@@ -715,11 +765,7 @@ function addSettings() {
     $('#extensions_settings2').append(settingsHtml);
 
     $('#gr_roster_select').on('change', function () {
-        getSettings().activeRosterId = String($(this).val());
-        saveSettingsDebounced();
-        renderRosterLists();
-        $('#gr_roster_note').val(getActiveRoster()?.note ?? '');
-        refreshPanel();
+        setActiveRoster(String($(this).val()));
     });
 
     $('#gr_roster_new').on('click', async () => {
