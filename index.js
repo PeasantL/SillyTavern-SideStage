@@ -39,6 +39,13 @@ import { Popup } from '../../../popup.js';
 
 const MODULE_NAME = 'groupRoster';
 const PANEL_ID = 'groupRoster';
+/**
+ * Avatar the viewer is pinned to, or null to follow whoever spoke last.
+ * Deliberately not persisted: it is a way to look at one character for a
+ * moment, not a property of the roster, so it resets with the chat.
+ * @type {string|null}
+ */
+let focusedAvatar = null;
 
 const rosterDefaults = {
     /** @type {{id: string, name: string, cards: string[], note: string}[]} */
@@ -273,6 +280,16 @@ function isNoteApplied() {
  * chat's note when switched off.
  * @param {boolean} shouldApply
  */
+/**
+ * Pins the viewer to one character, or hands it back to the last speaker.
+ * @param {string|null} avatar
+ */
+function setFocusedAvatar(avatar) {
+    focusedAvatar = avatar;
+    refreshPanel();
+    refocusViewer();
+}
+
 function setNoteApplied(shouldApply) {
     const roster = getActiveRoster();
 
@@ -364,6 +381,31 @@ function makeCardRow(avatar) {
         name.title = t`Character file not found`;
     }
     row.appendChild(name);
+
+    // Clicking the card pins the viewer to this character; clicking it again
+    // hands the viewer back to whoever spoke last. Bound to the avatar and the
+    // name rather than to the row, so it cannot fight the icon toggles' labels.
+    if (character) {
+        const isFocused = focusedAvatar === avatar;
+        row.classList.toggle('gr-focused', isFocused);
+        const focus = () => setFocusedAvatar(isFocused ? null : avatar);
+
+        for (const element of [thumb, name]) {
+            element.classList.add('gr-focusable');
+            element.title = isFocused
+                ? t`Showing only this character's images — click to follow the last speaker again`
+                : t`Show only this character's images`;
+            element.addEventListener('click', focus);
+        }
+
+        name.tabIndex = 0;
+        name.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                focus();
+            }
+        });
+    }
 
     /**
      * Builds a hidden-checkbox icon toggle that sits inline on the row.
@@ -866,6 +908,8 @@ function addSettings() {
  * The wand button still toggles it by hand within a group.
  */
 function syncPanelToChat() {
+    focusedAvatar = null;
+
     if (!selected_group) {
         closePanel();
         return;
@@ -1047,6 +1091,23 @@ function findGroup(ctx) {
   return (ctx.groups || []).find((g) => String(g.id) === String(ctx.groupId)) ?? null;
 }
 
+// Whoever last took a turn, ignoring the user's own messages and system ones.
+function getLastSpeakerAvatar(ctx) {
+  const chat = Array.isArray(ctx?.chat) ? ctx.chat : [];
+
+  for (let i = chat.length - 1; i >= 0; i--) {
+    const message = chat[i];
+    if (!message || message.is_user || message.is_system) continue;
+    if (message.original_avatar) return message.original_avatar;
+
+    // Messages written before original_avatar existed only carry a name.
+    const byName = (ctx.characters || []).find((c) => c.name === message.name);
+    if (byName) return byName.avatar;
+  }
+
+  return null;
+}
+
 // A group chat has no characterId, so resolve its members instead.
 function getActiveCharacters(ctx) {
   if (!ctx) return [];
@@ -1055,7 +1116,16 @@ function getActiveCharacters(ctx) {
   if (ctx.groupId) {
     const members = findGroup(ctx)?.members;
     if (!Array.isArray(members)) return [];
-    return members
+
+    // Show one member's images rather than the whole group's: a roster pin wins,
+    // otherwise whoever spoke last. Both are checked against the member list, so
+    // a pin or a speaker who has since left the group falls through to the group
+    // as a whole — as does a chat where nobody has spoken yet.
+    const only = [focusedAvatar, getLastSpeakerAvatar(ctx)].find(
+      (avatar) => avatar && members.includes(avatar),
+    );
+
+    return (only ? [only] : members)
       .map((avatar) => allCharacters.find((c) => c.avatar === avatar))
       .filter(Boolean);
   }
@@ -1067,8 +1137,9 @@ function getActiveCharacters(ctx) {
 }
 
 function getActiveLabel(ctx) {
-  if (ctx?.groupId) return findGroup(ctx)?.name || "Group";
-  return getActiveCharacters(ctx)[0]?.name || "";
+  const active = getActiveCharacters(ctx);
+  if (ctx?.groupId && active.length !== 1) return findGroup(ctx)?.name || "Group";
+  return active[0]?.name || "";
 }
 
 // Identity that survives characterId reshuffles, so we only reset on real changes.
@@ -1512,6 +1583,32 @@ function handleMessageSwiped(mesId) {
   retargetToGreeting();
 }
 
+/**
+ * The image source itself changed — a different character is being shown — so
+ * the viewer starts at the top of the new list rather than keeping its index.
+ * A closed viewer is left closed: only a context change opens one uninvited.
+ */
+function refocusViewer() {
+  if (lastContextKey === null) return;
+
+  const result = scanAndGetImages();
+  if (!result) return;
+
+  if (viewerState && $(`#${SINGLE_VIEWER_ID}`).length > 0) {
+    if (result.images.length === 0) {
+      closeViewer();
+    } else {
+      viewerState.images = result.images;
+      viewerState.failures = 0;
+      updateImage(0);
+    }
+  }
+
+  if ($(`#${GALLERY_ID}`).length > 0) {
+    spawnGalleryWindow(result.images, result.charName);
+  }
+}
+
 // Card edits and group membership changes alter the image list in place.
 function handleContentUpdate() {
   if (lastContextKey === null) return;
@@ -1592,6 +1689,8 @@ function initImages() {
     eventSource.on(eventTypes.CHARACTER_EDITED, onContentUpdate);
     eventSource.on(eventTypes.GROUP_UPDATED, onContentUpdate);
     eventSource.on(eventTypes.MESSAGE_SWIPED, handleMessageSwiped);
+    eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, refocusViewer);
+    eventSource.on(eventTypes.MESSAGE_DELETED, refocusViewer);
   } else {
     console.warn(logPrefix, "Event source unavailable; auto-open disabled.");
   }

@@ -243,6 +243,27 @@
     font-style: italic;
 }
 
+/* The avatar and name pin the viewer to this character; the icon toggles
+   either side of them keep their own jobs. */
+.gr-focusable {
+    cursor: pointer;
+}
+
+.gr-card.gr-focused {
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: inset 2px 0 0 var(--smart-theme-color, #007bff);
+}
+
+.gr-card.gr-focused .gr-card-name {
+    color: var(--smart-theme-color, #007bff);
+    font-weight: bold;
+}
+
+.gr-card-name:focus-visible {
+    outline: 2px solid var(--smart-theme-color, #007bff);
+    outline-offset: 2px;
+}
+
 .gr-empty {
     grid-column: 1 / -1;
     opacity: 0.6;
