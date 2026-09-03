@@ -1,3 +1,344 @@
+/* SideStage — the roster half (gr-) and the image half (civ-) keep their
+   original prefixes: they were already unique, and renaming ~50 selectors
+   would have been churn with real breakage risk and no payoff. */
+
+/* ═══════════════════════ Group roster ═══════════════════════ */
+
+/* ---- Window ------------------------------------------------------------- */
+/* Mirrors .civ-window-standard from the Character Image Viewer, value for
+   value, so both floating windows read as the same component. Position fixed
+   and self-contained: this deliberately does NOT reuse ST's .draggable, which
+   is forced to 100vw/100vh below 1000px and goes fullscreen on a tablet. */
+.gr-window {
+    background-color: var(--smart-background-color, #1a1a1a);
+    border: 1px solid var(--smart-border-color, #444);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    border-radius: 8px;
+    overflow: hidden;
+    z-index: 500;
+}
+
+.gr-header {
+    background-color: var(--smart-app-bar-color, #2a2a2a);
+    padding: 5px 10px;
+    font-size: calc(var(--mainFontSize) * 1.1);
+    cursor: move;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+    border-bottom: 1px solid #444;
+    color: var(--smart-text-color, #eee);
+}
+
+.gr-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gr-body {
+    flex-grow: 1;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.gr-footer {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    padding: 6px;
+    border-top: 1px solid #444;
+    background-color: var(--smart-app-bar-color, #2a2a2a);
+}
+
+/* The only footer control, kept compact so it reads as a status toggle
+   rather than a primary action. */
+#groupRosterNoteToggle {
+    flex: 0 0 auto;
+    gap: 5px;
+    padding: 2px 6px;
+    font-size: calc(var(--mainFontSize) * 0.8);
+}
+
+#groupRosterNoteToggle i {
+    font-size: 0.9em;
+}
+
+.gr-footer-toggle input {
+    display: none;
+}
+
+.gr-footer-toggle {
+    opacity: 0.6;
+    margin: 0;
+}
+
+.gr-footer-toggle:has(input:checked) {
+    opacity: 1;
+    color: var(--smart-theme-color, #007bff);
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.gr-footer-toggle:has(input:disabled) {
+    opacity: 0.25;
+    cursor: not-allowed;
+}
+
+.gr-footer-toggle:has(input:disabled):hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.gr-footer-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--smart-text-color, #eee);
+    background: rgba(255, 255, 255, 0.08);
+    transition: background-color 0.2s;
+}
+
+.gr-footer-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.gr-footer-btn:focus-visible {
+    outline: 2px solid var(--smart-theme-color, #007bff);
+    outline-offset: 2px;
+}
+
+.gr-status {
+    font-weight: normal;
+    opacity: 0.6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gr-status.gr-warning {
+    color: #ff6b6b;
+    opacity: 1;
+}
+
+/* ---- Cards: compact rows, grid so they never stretch a wide window ------- */
+.gr-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    align-content: start;
+    gap: 2px 6px;
+    padding: 6px;
+}
+
+.gr-card {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: calc(var(--mainFontSize) * 0.85);
+    line-height: 1.2;
+    color: var(--smart-text-color, #eee);
+}
+
+.gr-card:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.gr-card.gr-speaking {
+    background: rgba(0, 0, 0, 0.3);
+    outline: 1px solid var(--smart-theme-color, #007bff);
+}
+
+.gr-card-avatar {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+.gr-card-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gr-card-missing {
+    opacity: 0.5;
+    font-style: italic;
+}
+
+.gr-empty {
+    grid-column: 1 / -1;
+    opacity: 0.6;
+    font-style: italic;
+    padding: 10px;
+    text-align: center;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    color: var(--smart-text-color, #eee);
+}
+
+/* ---- Inline icon toggles ------------------------------------------------ */
+.gr-icon-toggle {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 0;
+    opacity: 0.45;
+    transition: opacity 0.2s, color 0.2s, background-color 0.2s;
+}
+
+.gr-icon-toggle input {
+    display: none;
+}
+
+.gr-icon-toggle i {
+    font-size: calc(var(--mainFontSize) * 1.9);
+    pointer-events: none;
+}
+
+.gr-icon-toggle:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.gr-icon-toggle:has(input:checked) {
+    opacity: 1;
+    color: var(--smart-theme-color, #007bff);
+}
+
+.gr-icon-toggle:has(input:disabled) {
+    opacity: 0.15;
+    cursor: not-allowed;
+    background: transparent;
+}
+
+.gr-icon-toggle:focus-within {
+    outline: 2px solid var(--smart-theme-color, #007bff);
+    outline-offset: 2px;
+    opacity: 1;
+}
+
+.gr-card.gr-speaking .gr-turn {
+    opacity: 1;
+    color: var(--smart-theme-color, #007bff);
+}
+
+/* ---- Settings drawer ---------------------------------------------------- */
+.gr-lists {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.gr-list-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.gr-list-title {
+    font-weight: bold;
+    opacity: 0.8;
+}
+
+.gr-settings-list {
+    max-height: 260px;
+    overflow-y: auto;
+    margin-top: 5px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 4px;
+}
+
+.gr-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.gr-settings-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gr-settings-action {
+    flex: 0 0 auto;
+    opacity: 0.5;
+}
+
+.gr-settings-row:hover .gr-settings-action {
+    opacity: 1;
+}
+
+.gr-settings-row:focus-visible {
+    outline: 2px solid var(--smart-theme-color, #007bff);
+    outline-offset: -2px;
+}
+
+.menu_button.disabled {
+    pointer-events: none;
+    opacity: 0.4;
+}
+
+/* Clear wipes the whole roster and is rarely wanted: flatten it so it doesn't
+   read as a primary action sitting under the list. */
+.menu_button.gr-flat-button {
+    background-color: transparent;
+    border-color: transparent;
+    filter: none;
+    opacity: 0.6;
+    padding: 1px 4px;
+    margin: 2px 0;
+    font-size: calc(var(--mainFontSize) * 0.9);
+}
+
+.menu_button.gr-flat-button:hover {
+    opacity: 1;
+    background-color: var(--white20a);
+}
+
+.gr-settings-row:hover {
+    background-color: var(--white20a);
+}
+
+.gr-settings-avatar {
+    width: 24px;
+    height: 24px;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+/* ════════════════════ Character images ══════════════════════ */
+
 /* ── Thumbnail Grid ── */
 .civ-gallery-grid {
   display: grid;
@@ -239,4 +580,29 @@
   display: block;
   margin-top: 6px;
   opacity: 0.7;
+}
+
+/* ════════════════════════ Settings drawer ═══════════════════════ */
+
+/* The two halves share one drawer, split by a rule rather than by a second
+   collapsible: they are one feature now, and nesting drawers reads badly. */
+.ss-settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ss-settings-heading {
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: calc(var(--mainFontSize) * 0.8);
+    letter-spacing: 0.06em;
+    opacity: 0.6;
+}
+
+.ss-settings-divider {
+    height: 1px;
+    margin: 12px 0;
+    background-color: var(--SmartThemeBorderColor);
+    opacity: 0.5;
 }

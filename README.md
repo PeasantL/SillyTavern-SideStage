@@ -1,43 +1,50 @@
-Forked from baruvibe/SillyTavern-CharImgViewer
+Image half forked from baruvibe/SillyTavern-CharImgViewer
 
-# 🖼️ Character Image Viewer for SillyTavern
+# 🎭 SideStage for SillyTavern
 
-A SillyTavern extension that automatically displays images from a character card in a sleek floating window, with a full gallery for browsing all detected images.
+A right-hand dock for group chats: who is in the scene, whose turn it is, and
+what the scene looks like. SideStage merges two extensions — **Group Roster**
+(the cast list and turn controls) and **Character Image Viewer** (the frameless
+viewer and its gallery) — into one panel with one settings drawer.
 
 ## ✨ Features
 
-- **Auto-Open Viewer**: When a character is selected, the image viewer pops up automatically showing the first image. Can be turned off in the extension settings.
-- **Greeting-Aware**: The viewer opens on the image referenced by the greeting currently on screen, and follows along when you swipe to an alternate greeting or start a new chat. Toggled by the **Change with Greeting** setting.
+### Roster
+
+- **Rosters**: Named card lists you switch between, independent of group membership.
+- **One-click membership**: Toggle any roster card in or out of the open group chat.
+- **Force a turn**: Make a specific member speak next, bypassing the activation strategy. Anything typed in the message box is posted as your user turn first, so the forced reply answers it.
+- **Per-roster Author's Note**: Each roster carries a note; a footer toggle fills the chat's Author's Note with it and clears it again.
+- **Follows the chat**: Opens on group chats, closes elsewhere. The wand menu toggles it by hand.
+
+### Images
+
+- **Auto-Open Viewer**: When a character is selected, the frameless viewer appears showing the first image. Can be turned off in settings.
+- **Greeting-Aware**: Opens on the image referenced by the greeting currently on screen, and follows along when you swipe to an alternate greeting or start a new chat. Toggled by **Change with Greeting**.
 - **Deep Scan**: Finds image URLs hidden anywhere in the character's data (Description, Personality, Scenario, Alternate Greetings, character book, and so on).
 - **Group Chat Support**: In a group, every member's card is scanned and the results are merged into one list.
-- **Immersive Viewer**:
-  - **Frameless Design**: Minimalist transparent window with floating controls that appear on hover.
-  - **Transparent Background**: Perfect for viewing sprites and cutouts over your chat background.
-  - **Slideshow Mode**: Navigate with on-screen arrows (`<` `>`), keyboard arrows, or `Escape` to close.
-  - **Aspect-Ratio Resize**: Drag the bottom-right corner to resize, locked to the image's proportions.
-  - **Auto-Fit**: Navigating to an image with a different aspect ratio re-shapes the window to match, keeping its width and its bottom-right corner.
-  - **Reset Position**: A button in the overlay controls snaps the viewer back to its spawn spot (bottom-right, just above the input bar).
-- **Floating Gallery**: A draggable and resizable thumbnail grid for browsing all found images.
-- **Quick Gallery Access**: Open the gallery from the image viewer via the gallery icon button.
-- **Chat-Aware Cleanup**: Closing a chat automatically closes all viewer and gallery windows.
+- **Immersive Viewer**: Transparent frameless window with hover-revealed controls, slideshow navigation (`<` `>`, arrow keys, `Escape`), aspect-ratio-locked resize, auto-fit on image change, and a reset-position button.
+- **Gallery**: A thumbnail grid of every image found, reached from the viewer's gallery button.
+- **Chat-Aware Cleanup**: Closing a chat closes the viewer and gallery.
 
 ## 📥 Installation
 
 1. Open **SillyTavern**.
-2. Navigate to the **Extensions** menu (Puzzle piece icon).
-3. Click on **Install Extension**.
+2. Navigate to the **Extensions** menu (puzzle piece icon).
+3. Click **Install Extension**.
 4. Paste the URL of this repository:
-   `https://github.com/PeasantL/SillyTavern-CharImgViewer`
+   `https://github.com/PeasantL/SillyTavern-SideStage`
 5. Click **Install**.
 6. **Reload** the page (F5).
 
 ## 🎮 How to Use
 
-- **From Viewer**: Click the gallery icon in the image viewer's overlay controls to open the full gallery.
-- **Navigate**: Use on-screen `<` `>` arrows or keyboard `←` `→` keys. Press `Escape` to close the viewer.
-- **Settings**: Extensions panel → **Character Image Viewer**.
-  - *Open the viewer automatically on character select* — note this is the only way the viewer appears, so disabling it makes the extension inert until it is switched back on.
-  - *Change with Greeting* — whether the viewer tracks the greeting on screen. Off means it opens on the first image found and only moves when you navigate it.
+- **Open the roster**: Wand menu → **SideStage**, or let it open itself when you enter a group chat.
+- **Open the gallery**: The gallery button in the viewer's overlay controls.
+- **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
+- **Settings**: Extensions panel → **SideStage**. One drawer, two sections:
+  - *Roster* — pick, create, rename and delete rosters; edit the roster's Author's Note; add and remove cards.
+  - *Images* — *Open the viewer automatically on character select* and *Change with Greeting*.
 
 ## 🔒 Privacy
 
