@@ -787,8 +787,15 @@
     text-align: center;
 }
 
+/* Exactly one column in the row may flex: .gr-layout-card. Every other column
+   is fixed and unshrinkable, so each row resolves its columns identically and
+   the header lines up with all of them. Give a second column flex-grow and the
+   free space gets split against each row's own name width instead, which puts
+   every row's columns in a different place. min-width:0 throughout so a glyph
+   or a label can't hold a column open past its stated width either. */
 .gr-layout-grip {
-    flex: 0 0 12px;
+    flex: 0 0 16px;
+    min-width: 0;
     text-align: center;
     opacity: 0.4;
     cursor: grab;
@@ -813,7 +820,7 @@
 }
 
 .gr-layout-check {
-    flex: 0 1 56px;
+    flex: 0 0 52px;
     min-width: 0;
     display: flex;
     align-items: center;
@@ -826,7 +833,7 @@
    iOS a select as the flex item pushes the whole drawer sideways. The div
    shrinks, and the select is told to fill whatever it gets. */
 .gr-layout-greeting {
-    flex: 1 1 34%;
+    flex: 0 0 32%;
     min-width: 0;
     overflow: hidden;
 }
