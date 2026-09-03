@@ -6,14 +6,21 @@
 
 /* One slot on the right edge, shared by the roster and the gallery. Fixed
    furniture: neither can be dragged or resized, so they are always the same
-   size as each other and always in the same place. */
+   size as each other and always in the same place.
+
+   The column runs from under ST's top bar down to the frameless viewer. The
+   bottom is a static reserve rather than a live measurement of the viewer: the
+   viewer re-shapes itself to every image's aspect ratio, so tracking it would
+   make the roster grow and shrink on every swipe. 50vh is the viewer's own
+   height cap and 24px is the gap it spawns above the bottom edge, so this
+   clears the tallest the viewer can ever be. */
 .ss-dock {
     position: fixed;
     right: 0;
-    top: 5vh;
+    top: calc(var(--topBarBlockSize, 40px) + 8px);
+    bottom: calc(50vh + 32px);
     width: 20vw;
     min-width: 220px;
-    height: 45vh;
 }
 
 /* Fixed stacking order rather than a click-to-front scramble. The gallery is a
@@ -26,10 +33,6 @@
 
 .civ-window-standard.ss-dock {
     z-index: 501;
-}
-
-.civ-window-frameless {
-    z-index: 502;
 }
 
 /* ═══════════════════════ Group roster ═══════════════════════ */
@@ -437,7 +440,8 @@
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.05);
-  z-index: 500;
+  /* Above both dock windows, so dragging it over the dock keeps it visible. */
+  z-index: 502;
 }
 
 .civ-overlay-container {
