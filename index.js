@@ -2194,6 +2194,37 @@ function getContextKey(ctx) {
   return `char:${(ctx.characters || [])[id]?.avatar ?? id}`;
 }
 
+/**
+ * Which cast the viewer is showing, as an identity that survives a rescan:
+ * one member's avatar when a group resolves to a single speaker, the group
+ * itself when it doesn't, and the character in a solo chat.
+ */
+function getViewerIdentityKey(ctx) {
+  const active = getActiveCharacters(ctx);
+  if (ctx?.groupId) {
+    return active.length === 1
+      ? `member:${active[0].avatar}`
+      : `group:${ctx.groupId}`;
+  }
+  return active[0]?.avatar ? `char:${active[0].avatar}` : null;
+}
+
+// The image each cast was last left on, so a member who speaks again comes back
+// to where you were instead of to the top of its list. URLs rather than indices,
+// because a rescan can reorder or resize the list. Only ever filled in a group
+// chat — viewerIdentityKey stays null elsewhere, so a solo chat keeps following
+// the greeting and resetting from there. Session-only, and dropped whenever the
+// chat context changes.
+const lastViewedByIdentity = new Map();
+let viewerIdentityKey = null;
+
+// Where `key` left the viewer, or -1 if nothing is remembered or the image it
+// was on is no longer in the list.
+function recallViewedIndex(key, images) {
+  const url = key ? lastViewedByIdentity.get(key) : null;
+  return url ? images.indexOf(url) : -1;
+}
+
 // ── Shared image list (populated by scan) ──
 let lastScannedImages = [];
 let lastScannedCharName = "";
@@ -2363,6 +2394,9 @@ function updateImage(newIndex) {
   viewerState.index = index;
   viewerState.$win.removeClass("civ-load-error");
   viewerState.$img.attr("src", list[index]);
+  // Remembered on show rather than at handoff, so the last thing on screen is
+  // what comes back even if the turn ends without another rescan.
+  if (viewerIdentityKey) lastViewedByIdentity.set(viewerIdentityKey, list[index]);
 
   const probe = new Image();
   probe.onload = () => {
@@ -2600,9 +2634,12 @@ function handleContextChange() {
   closeAllWindows();
   lastScannedImages = [];
   lastScannedCharName = "";
+  lastViewedByIdentity.clear();
+  viewerIdentityKey = null;
   if (key === null) return;
 
   const result = scanAndGetImages();
+  viewerIdentityKey = ctx.groupId ? getViewerIdentityKey(ctx) : null;
   if (imageSettings.autoOpen && result && result.images.length > 0) {
     // Lead with whatever the greeting on screen points at.
     const startIndex = imageSettings.changeWithGreeting
@@ -2634,8 +2671,16 @@ function handleMessageSwiped(mesId) {
 function refocusViewer() {
   if (lastContextKey === null) return;
 
+  const ctx = getSTContext();
   const result = scanAndGetImages();
   if (!result) return;
+
+  // In a group the turn passes between casts, so pick up where this one was
+  // left rather than at the top of its list. Anywhere else the list belongs to
+  // a single character and the viewer starts over, as it always has.
+  const nextKey = ctx?.groupId ? getViewerIdentityKey(ctx) : null;
+  const startIndex = Math.max(0, recallViewedIndex(nextKey, result.images));
+  viewerIdentityKey = nextKey;
 
   if (viewerState && $(`#${SINGLE_VIEWER_ID}`).length > 0) {
     if (result.images.length === 0) {
@@ -2643,7 +2688,7 @@ function refocusViewer() {
     } else {
       viewerState.images = result.images;
       viewerState.failures = 0;
-      updateImage(0);
+      updateImage(startIndex);
     }
   }
 
@@ -2655,8 +2700,12 @@ function refocusViewer() {
 // Card edits and group membership changes alter the image list in place.
 function handleContentUpdate() {
   if (lastContextKey === null) return;
+  const ctx = getSTContext();
   const result = scanAndGetImages();
   if (!result) return;
+
+  // A membership edit can hand the viewer to a different cast without a turn.
+  viewerIdentityKey = ctx?.groupId ? getViewerIdentityKey(ctx) : null;
 
   if (viewerState && $(`#${SINGLE_VIEWER_ID}`).length > 0) {
     if (result.images.length === 0) {
