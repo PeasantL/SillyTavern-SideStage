@@ -787,7 +787,8 @@
     text-align: center;
 }
 
-/* Exactly one column in the row may flex: .gr-layout-card. Every other column
+/* Exactly one column in the row may flex: .gr-layout-greeting, which is the
+   one whose contents are long enough to be worth the space. Every other column
    is fixed and unshrinkable, so each row resolves its columns identically and
    the header lines up with all of them. Give a second column flex-grow and the
    free space gets split against each row's own name width instead, which puts
@@ -810,8 +811,10 @@
     cursor: default;
 }
 
+/* A share of the drawer rather than the name's own width, which would differ
+   per row and take the alignment with it. Long names ellipsis instead. */
 .gr-layout-card {
-    flex: 1 1 auto;
+    flex: 0 0 30%;
     min-width: 0;
     display: flex;
     align-items: center;
@@ -833,7 +836,7 @@
    iOS a select as the flex item pushes the whole drawer sideways. The div
    shrinks, and the select is told to fill whatever it gets. */
 .gr-layout-greeting {
-    flex: 0 0 32%;
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
 }
