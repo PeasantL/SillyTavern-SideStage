@@ -2,6 +2,20 @@
    original prefixes: they were already unique, and renaming ~50 selectors
    would have been churn with real breakage risk and no payoff. */
 
+/* ═════════════════════════ The dock ═════════════════════════ */
+
+/* One slot on the right edge, shared by the roster and the gallery. Fixed
+   furniture: neither can be dragged or resized, so they are always the same
+   size as each other and always in the same place. */
+.ss-dock {
+    position: fixed;
+    right: 0;
+    top: 5vh;
+    width: 20vw;
+    min-width: 220px;
+    height: 45vh;
+}
+
 /* ═══════════════════════ Group roster ═══════════════════════ */
 
 /* ---- Window ------------------------------------------------------------- */
@@ -25,7 +39,6 @@
     background-color: var(--smart-app-bar-color, #2a2a2a);
     padding: 5px 10px;
     font-size: calc(var(--mainFontSize) * 1.1);
-    cursor: move;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -378,7 +391,6 @@
 .civ-header {
   background-color: var(--smart-app-bar-color, #2a2a2a);
   padding: 8px 12px;
-  cursor: move;
   display: flex;
   justify-content: space-between;
   align-items: center;

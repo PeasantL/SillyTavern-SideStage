@@ -39,10 +39,6 @@ import { Popup } from '../../../popup.js';
 
 const MODULE_NAME = 'groupRoster';
 const PANEL_ID = 'groupRoster';
-/** Same spawn box the Character Image Viewer gallery window uses. */
-const DEFAULT_GEOMETRY = 'top: 5vh; right: 0; width: 20vw; height: 45vh;';
-/** Last box the user left the window in; reapplied on reopen. */
-let lastGeometry = null;
 
 const rosterDefaults = {
     /** @type {{id: string, name: string, cards: string[], note: string}[]} */
@@ -329,17 +325,6 @@ function isPanelOpen() {
     return $(`#${PANEL_ID}`).length > 0;
 }
 
-/**
- * Snapshots the window's current box so reopening lands where the user left it.
- * Reads css() so a resize is captured as well as a drag.
- * @param {JQuery<HTMLElement>} $win
- */
-function rememberGeometry($win) {
-    lastGeometry = ['top', 'left', 'width', 'height']
-        .map(prop => `${prop}: ${$win.css(prop)};`)
-        .join(' ');
-}
-
 function closePanel() {
     const $win = $(`#${PANEL_ID}`);
 
@@ -347,7 +332,6 @@ function closePanel() {
         return;
     }
 
-    rememberGeometry($win);
     $win.remove();
 }
 
@@ -492,9 +476,8 @@ function openPanel() {
         return;
     }
 
-    const style = lastGeometry || DEFAULT_GEOMETRY;
     const html = `
-        <div id="${PANEL_ID}" class="gr-window" style="${style}">
+        <div id="${PANEL_ID}" class="gr-window ss-dock">
             <div class="gr-header">
                 <span class="gr-title">${t`Group Roster`}<small id="groupRosterStatus" class="gr-status"></small></span>
             </div>
@@ -513,24 +496,6 @@ function openPanel() {
 
     $('body').append(html);
     const $win = $(`#${PANEL_ID}`);
-
-    if ($.fn.draggable) {
-        $win.draggable({
-            handle: '.gr-header',
-            containment: 'window',
-            stop: function () {
-                rememberGeometry($(this));
-            },
-        });
-    }
-
-    if ($.fn.resizable) {
-        $win.resizable({
-            stop: function () {
-                rememberGeometry($(this));
-            },
-        });
-    }
 
     $win.find('#groupRosterNoteToggle input').on('change', function () {
         setNoteApplied(this.checked);
@@ -1131,7 +1096,7 @@ const GALLERY_ID = "civ-main-gallery-window";
 let viewerState = null; // { $win, $img, index, images, failures }
 
 // --- 4. DISPLAY ---
-function spawnGalleryWindow(images, charName, geometry) {
+function spawnGalleryWindow(images, charName) {
   $(`#${GALLERY_ID}`).remove();
 
   const gridHtml = images
@@ -1142,12 +1107,8 @@ function spawnGalleryWindow(images, charName, geometry) {
     )
     .join("");
 
-  const style =
-    geometry ||
-    "top: 5vh; right: 0; width: 20vw; height: 45vh;";
-
   const html = `
-      <div id="${GALLERY_ID}" class="civ-window-standard" style="${style}">
+      <div id="${GALLERY_ID}" class="civ-window-standard ss-dock">
           <div class="civ-header">
               <span>Gallery: ${escapeHtml(charName)} (${images.length})</span>
               <span class="civ-close-btn" role="button" tabindex="0" aria-label="Close gallery"
@@ -1161,16 +1122,6 @@ function spawnGalleryWindow(images, charName, geometry) {
   $("body").append(html);
   const $win = $(`#${GALLERY_ID}`);
   bringToFront($win);
-
-  if ($.fn.draggable)
-    $win.draggable({
-      handle: ".civ-header",
-      containment: "window",
-      stop: function () {
-        rememberAnchor($(this));
-      },
-    });
-  if ($.fn.resizable) $win.resizable();
 
   const close = () => $win.remove();
   $win
@@ -1546,12 +1497,8 @@ function handleContentUpdate() {
     }
   }
 
-  const $gallery = $(`#${GALLERY_ID}`);
-  if ($gallery.length > 0) {
-    const geometry = ["top", "left", "width", "height"]
-      .map((prop) => `${prop}: ${$gallery.css(prop)};`)
-      .join(" ");
-    spawnGalleryWindow(result.images, result.charName, geometry);
+  if ($(`#${GALLERY_ID}`).length > 0) {
+    spawnGalleryWindow(result.images, result.charName);
   }
 }
 
@@ -1585,7 +1532,7 @@ $(window).on(
     if (document.hidden) return;
     if (!window.innerWidth || !window.innerHeight) return;
 
-    $(".civ-window-standard, .civ-window-frameless").each(function () {
+    $(".civ-window-frameless").each(function () {
       const $win = $(this);
       if ($win.data(FOLLOW_SPAWN_KEY)) {
         anchorViewerToSpawn($win);
