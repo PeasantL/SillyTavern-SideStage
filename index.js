@@ -491,6 +491,10 @@ function openPanel() {
                     <i class="fa-solid fa-note-sticky fa-fw"></i>
                     <span>${t`Author's Note`}</span>
                 </label>
+                <div id="groupRosterGallery" class="gr-footer-btn interactable" role="button" tabindex="0"
+                     title="${t`Open the image gallery`}">
+                    <i class="fa-solid fa-images fa-fw"></i>
+                </div>
             </div>
         </div>`;
 
@@ -499,6 +503,15 @@ function openPanel() {
 
     $win.find('#groupRosterNoteToggle input').on('change', function () {
         setNoteApplied(this.checked);
+    });
+
+    const $gallery = $win.find('#groupRosterGallery');
+    $gallery.on('click', openGallery);
+    $gallery.on('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openGallery();
+        }
     });
 
     refreshPanel();
@@ -559,7 +572,9 @@ const settingsHtml = `
                     <span>Open the viewer automatically on character select</span>
                 </label>
                 <small class="civ-settings-note">
-                    Turning this off leaves no way to open the viewer, since the gallery is reached from it.
+                    With this off the viewer never appears on its own; the gallery is still
+                    reachable from the roster's gallery button, and opening an image from it
+                    brings the viewer back.
                 </small>
                 <label class="checkbox_label" for="civ-change-with-greeting" title="Opens on the image referenced by the greeting on screen, and switches when you swipe to an alternate greeting.">
                     <input id="civ-change-with-greeting" type="checkbox">
@@ -1353,13 +1368,6 @@ function spawnSingleImageWindow(startIndex, allImages) {
     });
 
     // ── Gallery button (replaces close) ──
-    const openGallery = () => {
-      if (lastScannedImages.length > 0) {
-        spawnGalleryWindow(lastScannedImages, lastScannedCharName);
-      } else {
-        performScan();
-      }
-    };
     $win
       .find(".civ-gallery-btn-round")
       .on("click", openGallery)
@@ -1411,6 +1419,16 @@ function spawnSingleImageWindow(startIndex, allImages) {
 }
 
 // --- 5. SCAN LOGIC ---
+// Shared by the viewer's round button and the roster footer's: reuse the last
+// scan when there is one, otherwise scan now and report what it found.
+function openGallery() {
+  if (lastScannedImages.length > 0) {
+    spawnGalleryWindow(lastScannedImages, lastScannedCharName);
+  } else {
+    performScan();
+  }
+}
+
 function performScan() {
   const result = scanAndGetImages();
   if (!result) {
