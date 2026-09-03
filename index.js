@@ -355,6 +355,16 @@ async function setMembership(avatar, shouldBeMember) {
         return false;
     }
 
+    // With a layout selected the panel's membership toggles are edits to that
+    // layout rather than drift from it. The layout is reapplied whenever a chat
+    // starts, so a change that didn't write through would silently revert.
+    const layout = getActiveLayout(getActiveRoster());
+
+    if (layout) {
+        setLayoutEntry(layout, avatar, { active: shouldBeMember, greets: shouldBeMember });
+        renderSettings();
+    }
+
     const index = group.members.indexOf(avatar);
 
     if (shouldBeMember) {
@@ -382,6 +392,102 @@ async function setMembership(avatar, shouldBeMember) {
     refreshGroupControlPanel();
     await eventSource.emit(event_types.GROUP_UPDATED);
     return true;
+}
+
+/**
+ * Rewrites the open group's member list to the selected layout's cast.
+ *
+ * Ordered by the roster rather than by the layout, because greetings are posted
+ * in member order: the roster is what decides who opens the scene first.
+ * @returns {Promise<boolean>} Whether the group was actually changed
+ */
+async function applyLayoutMembership() {
+    const group = getCurrentGroup();
+    const roster = getActiveRoster();
+    const layout = getActiveLayout(roster);
+
+    if (!group || !layout || !Array.isArray(group.members)) {
+        return false;
+    }
+
+    const wanted = roster.cards.filter(avatar =>
+        getLayoutEntry(layout, avatar).active && getCharacterByAvatar(avatar));
+
+    // A group with nobody in it can't be chatted with, so an empty layout reads
+    // as unfinished rather than as an instruction to clear the cast.
+    if (!wanted.length) {
+        toastr.warning(t`"${layout.name}" has nobody in the scene, so the group was left as it is.`);
+        return false;
+    }
+
+    if (wanted.length === group.members.length && wanted.every((x, i) => group.members[i] === x)) {
+        return false;
+    }
+
+    group.members = wanted;
+
+    // Don't leave a stale mute behind for a character that is no longer a member
+    if (Array.isArray(group.disabled_members)) {
+        group.disabled_members = group.disabled_members.filter(x => wanted.includes(x));
+    }
+
+    await editGroup(group.id, true, false);
+    refreshGroupControlPanel();
+    await eventSource.emit(event_types.GROUP_UPDATED);
+    return true;
+}
+
+/**
+ * Applies the selected layout to one member's greeting while a group chat is
+ * being created. Fires once per member, before its message is built.
+ * @param {{input: string, output: string, character: object}} args
+ */
+function applyLayoutGreeting(args) {
+    const layout = getActiveLayout(getActiveRoster());
+    const avatar = args?.character?.avatar;
+
+    if (!layout || !avatar) {
+        return;
+    }
+
+    const entry = getLayoutEntry(layout, avatar);
+
+    if (!entry.greets) {
+        // Whitespace rather than '': group-chats.js only takes the override when
+        // it is truthy, so an empty string would leave the random pick standing.
+        // A space survives that check, is trimmed to nothing immediately after,
+        // and a member whose first message is empty is dropped from the chat.
+        args.output = ' ';
+        return;
+    }
+
+    if (!Number.isInteger(entry.greeting)) {
+        // Unpinned: leave whatever is there, which may be another extension's
+        // pick from the same group-greeting pool.
+        return;
+    }
+
+    const pinned = getGroupGreetings(args.character)[entry.greeting];
+
+    if (pinned) {
+        args.output = pinned;
+    }
+}
+
+/**
+ * Brings the group back in line with its layout once a chat has been created.
+ *
+ * A safety net, not the main path: nothing in ST runs between a group chat
+ * being created and its greetings being posted, so membership has to already
+ * be right by then. This catches a group whose cast was changed from ST's own
+ * group panel, which SideStage never sees, and corrects it from here on.
+ */
+async function reconcileGroupToLayout() {
+    try {
+        await applyLayoutMembership();
+    } catch (error) {
+        console.error('[SideStage] Failed to reconcile the group to its layout', error);
+    }
 }
 
 /**
@@ -682,7 +788,7 @@ function makeCardRow(avatar) {
  * Shared by the panel footer's picker and the settings drawer's.
  * @param {string} id
  */
-function setActiveLayout(id) {
+async function setActiveLayout(id) {
     const roster = getActiveRoster();
 
     if (!roster) {
@@ -691,6 +797,14 @@ function setActiveLayout(id) {
 
     roster.activeLayoutId = String(id);
     saveSettingsDebounced();
+
+    try {
+        await applyLayoutMembership();
+    } catch (error) {
+        console.error('[SideStage] Failed to apply the layout', error);
+        toastr.error(error?.message || t`Unknown error`, t`Failed to apply the layout`);
+    }
+
     renderSettings();
     refreshPanel();
 }
@@ -813,7 +927,11 @@ function openPanel() {
     });
 
     $win.find('#groupRosterLayoutPicker').on('change', function () {
-        setActiveLayout(String($(this).val()));
+        const picker = this;
+        picker.disabled = true;
+        setActiveLayout(String($(picker).val())).finally(() => {
+            picker.disabled = false;
+        });
     });
 
     refreshPanel();
@@ -1400,7 +1518,7 @@ function addSettings() {
         refreshPanel();
     });
 
-    $('#gr_layout_select').on('change', function () {
+    $('#gr_layout_select').on('change', async function () {
         const roster = getSettingsRoster();
 
         if (!roster) {
@@ -1409,6 +1527,13 @@ function addSettings() {
 
         roster.activeLayoutId = String($(this).val());
         saveSettingsDebounced();
+
+        // Only the open group's cast can be reshaped from here; another group's
+        // layout takes hold the next time a chat of that group starts.
+        if (getSettingsGroupId() === getCurrentGroup()?.id) {
+            await applyLayoutMembership();
+        }
+
         renderSettings();
         refreshPanel();
     });
@@ -2352,7 +2477,16 @@ jQuery(async () => {
     addSettings();
     addWandButton();
 
+    eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
+    eventSource.on(event_types.GROUP_CHAT_CREATED, reconcileGroupToLayout);
     eventSource.on(event_types.APP_READY, pruneOrphanRosters);
+    eventSource.on(event_types.APP_READY, () => {
+        // Extension-GroupGreetings listens to the same event and overwrites the
+        // greeting for any card with a group-greeting pool — the exact cards a
+        // layout pins. makeLast only moves this listener behind the ones already
+        // registered, so it has to run once every extension has loaded.
+        eventSource.makeLast(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
+    });
     eventSource.on(event_types.CHAT_CHANGED, syncPanelToChat);
     eventSource.on(event_types.GROUP_UPDATED, refreshPanel);
     eventSource.on(event_types.GENERATION_ENDED, refreshPanel);
