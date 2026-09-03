@@ -27,6 +27,9 @@ import {
     substituteParams,
     system_message_types,
     system_avatar,
+    default_avatar,
+    getCurrentChatId,
+    saveChatConditional,
 } from '../../../../script.js';
 import { getMessageTimeStamp } from '../../../RossAscends-mods.js';
 import { extension_settings } from '../../../extensions.js';
@@ -368,16 +371,6 @@ async function setMembership(avatar, shouldBeMember) {
         return false;
     }
 
-    // With a layout selected the panel's membership toggles are edits to that
-    // layout rather than drift from it. The layout is reapplied whenever a chat
-    // starts, so a change that didn't write through would silently revert.
-    const layout = getActiveLayout(getActiveRoster());
-
-    if (layout) {
-        setLayoutEntry(layout, avatar, { active: shouldBeMember, greets: shouldBeMember });
-        renderSettings();
-    }
-
     const index = group.members.indexOf(avatar);
 
     if (shouldBeMember) {
@@ -419,19 +412,17 @@ async function applyLayoutMembership() {
     const roster = getActiveRoster();
     const layout = getActiveLayout(roster);
 
-    if (!group || !layout || !Array.isArray(group.members)) {
+    if (!group || !Array.isArray(group.members) || !layout) {
+        return false;
+    }
+
+    if (!isLayoutUsable(roster, layout)) {
+        toastr.warning(t`"${layout.name}" has nobody in the scene, so the group was left as it is.`);
         return false;
     }
 
     const wanted = roster.cards.filter(avatar =>
         getLayoutEntry(layout, avatar).active && getCharacterByAvatar(avatar));
-
-    // A group with nobody in it can't be chatted with, so an empty layout reads
-    // as unfinished rather than as an instruction to clear the cast.
-    if (!wanted.length) {
-        toastr.warning(t`"${layout.name}" has nobody in the scene, so the group was left as it is.`);
-        return false;
-    }
 
     if (wanted.length === group.members.length && wanted.every((x, i) => group.members[i] === x)) {
         return false;
@@ -451,29 +442,143 @@ async function applyLayoutMembership() {
 }
 
 /**
- * Posts the layout's narrator line as the message that opens the scene.
- *
- * Called from the greeting hook while the chat is still empty, which is the
- * only moment a message can be put ahead of the greetings without reprinting
- * the chat: getGroupChat() empties chat[] and then pushes one greeting per
- * member, so pushing here lands at index 0 and the greetings queue up behind
- * it. addOneMessage() resolves its id with chat.indexOf(), so the ids stay
- * right as the loop appends.
- *
- * The message is a narrator-type one, which is what earns it the system avatar
- * and, in formatMessageHistoryItem(), a place in the prompt with no name in
- * front of it — scene text rather than a line of dialogue.
- * @param {Layout} layout
- * @returns {Promise<void>}
+ * Whether a layout can be applied at all. An empty one reads as unfinished
+ * rather than as an instruction to open an empty scene, so it is left alone
+ * and the group behaves as though no layout were selected.
+ * @param {Roster|null} roster
+ * @param {Layout|null} layout
+ * @returns {boolean}
  */
-async function postNarrator(layout) {
-    const text = layout.narrator.trim();
+function isLayoutUsable(roster, layout) {
+    return Boolean(roster && layout && roster.cards.some(avatar =>
+        getLayoutEntry(layout, avatar).active && getCharacterByAvatar(avatar)));
+}
 
-    if (!text) {
+/**
+ * Greeting text chosen during the current chat's creation, keyed by avatar.
+ *
+ * The greeting loop is the only place other extensions get to pick a greeting,
+ * and it only runs for characters that were group members at the time. Their
+ * choices are kept here so that rebuilding the scene afterwards reuses them
+ * rather than asking again — which for Extension-GroupGreetings in pick mode
+ * would mean a second dialog for the same character.
+ *
+ * Stamped with the chat it belongs to, so a scene can never be built out of
+ * text left over from the previous one.
+ * @type {{chatId: string, texts: Map<string, string>}}
+ */
+let capturedGreetings = { chatId: '', texts: new Map() };
+
+/**
+ * Captures and then suppresses one member's greeting while a group chat is
+ * being created. Fires once per member, before its message is built.
+ *
+ * Every greeting is suppressed, not just the ones the layout leaves out: the
+ * loop walks group.members, so it can never produce a greeting for a character
+ * the layout wants but the group has lost, and a scene half-built by the loop
+ * and half-repaired afterwards would come out in the wrong order. The loop is
+ * left to run for the choices it collects, and openSceneFromLayout() builds the
+ * whole opening from them.
+ * @param {{input: string, output: string, character: object}} args
+ */
+function applyLayoutGreeting(args) {
+    const roster = getActiveRoster();
+    const layout = getActiveLayout(roster);
+    const avatar = args?.character?.avatar;
+
+    if (!avatar || !isLayoutUsable(roster, layout)) {
         return;
     }
 
-    const message = {
+    const chatId = String(getCurrentChatId() ?? '');
+
+    if (capturedGreetings.chatId !== chatId) {
+        capturedGreetings = { chatId, texts: new Map() };
+    }
+
+    capturedGreetings.texts.set(avatar, String(args.output || args.input || ''));
+
+    // Whitespace rather than '': group-chats.js only takes the override when it
+    // is truthy, so an empty string would leave the random pick standing. A
+    // space survives that check, is trimmed to nothing immediately after, and a
+    // member whose first message is empty is dropped from the chat.
+    args.output = ' ';
+}
+
+/**
+ * The line a character opens the scene with.
+ * @param {Layout} layout
+ * @param {object} character
+ * @param {Map<string, string>} captured
+ * @returns {string}
+ */
+function getOpeningLine(layout, character, captured) {
+    const entry = getLayoutEntry(layout, character.avatar);
+    const pool = getGroupGreetings(character);
+
+    if (Number.isInteger(entry.greeting) && pool[entry.greeting]) {
+        return pool[entry.greeting];
+    }
+
+    if (captured.has(character.avatar)) {
+        return captured.get(character.avatar);
+    }
+
+    // Never reached the greeting loop, so nothing chose for it: the character
+    // wasn't a member when the chat was built and the layout is bringing it
+    // back. Mirror what ST and Extension-GroupGreetings would have done.
+    const options = pool.length
+        ? pool
+        : [character.first_mes, ...(character.data?.alternate_greetings ?? [])].filter(x => x);
+
+    return options.length ? options[Math.floor(Math.random() * options.length)] : '';
+}
+
+/**
+ * Builds a character's opening message the way getFirstCharacterMessage() does.
+ * @param {object} character
+ * @param {string} text
+ * @returns {object|null}
+ */
+function buildGreetingMessage(character, text) {
+    const mes = substituteParams(String(text ?? '').trim(), { name2Override: character.name });
+
+    if (!mes) {
+        return null;
+    }
+
+    return {
+        is_user: false,
+        is_system: false,
+        name: character.name,
+        send_date: getMessageTimeStamp(),
+        original_avatar: character.avatar,
+        extra: { gen_id: Date.now() * Math.random() * 1000000 },
+        mes: mes,
+        force_avatar: character.avatar !== 'none'
+            ? getThumbnailUrl('avatar', character.avatar)
+            : default_avatar,
+    };
+}
+
+/**
+ * Builds the layout's narrator line.
+ *
+ * A narrator-type message, which is what earns it the system avatar and, in
+ * formatMessageHistoryItem(), a place in the prompt with no name in front of
+ * it — scene text rather than a line of dialogue from someone. Not a system
+ * message, so it does reach the prompt.
+ * @param {Layout} layout
+ * @returns {object|null}
+ */
+function buildNarratorMessage(layout) {
+    const text = layout.narrator.trim();
+
+    if (!text) {
+        return null;
+    }
+
+    return {
         name: String(chat_metadata[NARRATOR_NAME_KEY] || t`Narrator`),
         is_user: false,
         is_system: false,
@@ -485,74 +590,73 @@ async function postNarrator(layout) {
             gen_id: Date.now() * Math.random() * 1000000,
         },
     };
-
-    chat.push(message);
-    // Emitted the way the greeting loop emits its own, so extensions that act
-    // on new messages — TTS, translation — see this one too.
-    await eventSource.emit(event_types.MESSAGE_RECEIVED, (chat.length - 1), 'first_message');
-    addOneMessage(message);
-    await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, (chat.length - 1), 'first_message');
 }
 
 /**
- * Applies the selected layout to one member's greeting while a group chat is
- * being created. Fires once per member, before its message is built.
- * @param {{input: string, output: string, character: object}} args
+ * Opens a fresh group chat as the selected layout describes it.
+ *
+ * Runs on GROUP_CHAT_CREATED, once the greeting loop has finished and left the
+ * chat empty. Doing the whole opening here rather than steering the loop is
+ * what lets the layout bring back a character the group had lost: the loop only
+ * ever visits current members, so a character the layout wants but the cast is
+ * missing can only be given a greeting after the fact. Membership and greetings
+ * then land together, in one chat reset.
  * @returns {Promise<void>}
  */
-async function applyLayoutGreeting(args) {
-    const layout = getActiveLayout(getActiveRoster());
-    const avatar = args?.character?.avatar;
+async function openSceneFromLayout() {
+    const roster = getActiveRoster();
+    const layout = getActiveLayout(roster);
 
-    if (!layout || !avatar) {
+    const captured = capturedGreetings.chatId === String(getCurrentChatId() ?? '')
+        ? capturedGreetings.texts
+        : new Map();
+    capturedGreetings = { chatId: '', texts: new Map() };
+
+    if (!isLayoutUsable(roster, layout)) {
         return;
     }
 
-    // An empty chat means no greeting has been posted yet, so this is the first
-    // member the loop has reached. Checking the chat rather than counting calls
-    // keeps it right when the earlier members were all suppressed.
-    if (!chat.length) {
-        await postNarrator(layout);
-    }
-
-    const entry = getLayoutEntry(layout, avatar);
-
-    if (!entry.greets) {
-        // Whitespace rather than '': group-chats.js only takes the override when
-        // it is truthy, so an empty string would leave the random pick standing.
-        // A space survives that check, is trimmed to nothing immediately after,
-        // and a member whose first message is empty is dropped from the chat.
-        args.output = ' ';
-        return;
-    }
-
-    if (!Number.isInteger(entry.greeting)) {
-        // Unpinned: leave whatever is there, which may be another extension's
-        // pick from the same group-greeting pool.
-        return;
-    }
-
-    const pinned = getGroupGreetings(args.character)[entry.greeting];
-
-    if (pinned) {
-        args.output = pinned;
-    }
-}
-
-/**
- * Brings the group back in line with its layout once a chat has been created.
- *
- * A safety net, not the main path: nothing in ST runs between a group chat
- * being created and its greetings being posted, so membership has to already
- * be right by then. This catches a group whose cast was changed from ST's own
- * group panel, which SideStage never sees, and corrects it from here on.
- */
-async function reconcileGroupToLayout() {
     try {
         await applyLayoutMembership();
     } catch (error) {
-        console.error('[SideStage] Failed to reconcile the group to its layout', error);
+        console.error('[SideStage] Failed to apply the layout to the group', error);
+        toastr.error(error?.message || t`Unknown error`, t`Failed to apply the layout`);
+        return;
     }
+
+    const group = getCurrentGroup();
+
+    if (!group) {
+        return;
+    }
+
+    const messages = [buildNarratorMessage(layout)];
+
+    for (const avatar of group.members) {
+        const character = getCharacterByAvatar(avatar);
+
+        if (!character || !getLayoutEntry(layout, avatar).greets) {
+            continue;
+        }
+
+        messages.push(buildGreetingMessage(character, getOpeningLine(layout, character, captured)));
+    }
+
+    // Defensive: the loop suppressed everything, so both should already be
+    // empty, and anything that isn't would otherwise be rendered twice.
+    chat.splice(0, chat.length);
+    $('#chat').find('.mes').remove();
+
+    for (const message of messages.filter(x => x)) {
+        chat.push(message);
+        // Emitted the way the greeting loop emits its own, so extensions that
+        // act on new messages — TTS, translation — see these too.
+        await eventSource.emit(event_types.MESSAGE_RECEIVED, (chat.length - 1), 'first_message');
+        addOneMessage(message);
+        await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, (chat.length - 1), 'first_message');
+    }
+
+    await saveChatConditional();
 }
 
 /**
@@ -2558,7 +2662,7 @@ jQuery(async () => {
     addWandButton();
 
     eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
-    eventSource.on(event_types.GROUP_CHAT_CREATED, reconcileGroupToLayout);
+    eventSource.on(event_types.GROUP_CHAT_CREATED, openSceneFromLayout);
     eventSource.on(event_types.APP_READY, pruneOrphanRosters);
     eventSource.on(event_types.APP_READY, () => {
         // Extension-GroupGreetings listens to the same event and overwrites the

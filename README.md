@@ -25,7 +25,7 @@ A layout is a saved answer to *how does this scene start*. Pick one from the
 panel footer; it takes hold as soon as you select it, and again every time you
 start a new chat with that group.
 
-- **Who is in the scene**: Selecting a layout rewrites the group's cast to the cards it lists, in roster order. With a layout selected, the panel's membership toggles edit it, so building a scene is just clicking cards.
+- **Who is in the scene**: Selecting a layout rewrites the group's cast to the cards it lists, in roster order, and every new chat restores it. Toggling membership in the panel changes the cast for the chat you're in without touching the layout, so a layout stays a fixed, repeatable arrangement.
 - **Who opens it**: A card can be in the scene without posting a greeting, so someone can be present from the first line without speaking first.
 - **Which greeting**: Pin a card to a specific opening line instead of ST's random pick, so a scene starts the same way every time.
 - **A narrator**: Optional scene-setting text posted ahead of every greeting — where you are, what has just happened. It reaches the prompt as narration rather than as anyone's dialogue.
