@@ -9,16 +9,28 @@
    size as each other and always in the same place.
 
    The column runs from under ST's top bar down to the frameless viewer. The
-   bottom is a static reserve rather than a live measurement of the viewer: the
-   viewer re-shapes itself to every image's aspect ratio, so tracking it would
-   make the roster grow and shrink on every swipe. 50vh is the viewer's own
-   height cap and 24px is the gap it spawns above the bottom edge, so this
-   clears the tallest the viewer can ever be. */
+   space kept for the viewer is a static reserve rather than a live measurement
+   of it: the viewer re-shapes itself to every image's aspect ratio, so tracking
+   it would make the roster grow and shrink on every swipe. 50vh is the viewer's
+   own height cap and 24px is the gap it spawns above the bottom edge, so the
+   reserve clears the tallest it can ever be.
+
+   The span is top + height, never `bottom`. Core sets -webkit-transform on
+   <html> (style.css, the blur-flicker fix), which makes <html> the containing
+   block for fixed elements on WebKit. Core's mobile block then sets
+   `body { position: fixed }` under 1000px — and this install's user.css does
+   the same under 1420px — which takes body out of flow and collapses <html> to
+   zero height. A `bottom` offset resolved against that box puts the dock
+   off-screen: it rendered on a wide desktop and vanished on an iPad. Viewport
+   units dodge the collapsed containing block entirely. */
 .ss-dock {
     position: fixed;
     right: 0;
     top: calc(var(--topBarBlockSize, 40px) + 8px);
-    bottom: calc(50vh + 32px);
+    /* 100vh - top - (50vh viewer cap + 24px spawn gap + 8px breathing room) */
+    height: calc(50vh - var(--topBarBlockSize, 40px) - 40px);
+    height: calc(50dvh - var(--topBarBlockSize, 40px) - 40px);
+    min-height: 160px;
     width: 20vw;
     min-width: 220px;
 }
