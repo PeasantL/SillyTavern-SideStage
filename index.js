@@ -21,7 +21,14 @@ import {
     sendMessageAsUser,
     extractMessageBias,
     unshallowCharacter,
+    chat,
+    chat_metadata,
+    addOneMessage,
+    substituteParams,
+    system_message_types,
+    system_avatar,
 } from '../../../../script.js';
+import { getMessageTimeStamp } from '../../../RossAscends-mods.js';
 import { extension_settings } from '../../../extensions.js';
 import {
     groups,
@@ -40,6 +47,8 @@ import { Popup } from '../../../popup.js';
 
 const MODULE_NAME = 'groupRoster';
 const PANEL_ID = 'groupRoster';
+/** Chat-scoped display name for narrator messages, set by ST's /sysname. */
+const NARRATOR_NAME_KEY = 'narrator_name';
 /**
  * Avatar the viewer is pinned to, or null to follow whoever spoke last.
  * Deliberately not persisted: it is a way to look at one character for a
@@ -62,6 +71,7 @@ let focusedAvatar = null;
  * @property {string} id
  * @property {string} name
  * @property {string} note Author's Note for this scene; blank falls back to the group's
+ * @property {string} narrator Scene-setting text posted before the greetings; blank for none
  * @property {Record<string, LayoutEntry>} cards Keyed by avatar file name; absent means inactive
  */
 
@@ -138,6 +148,9 @@ function getSettings() {
         for (const layout of roster.layouts) {
             if (typeof layout.note !== 'string') {
                 layout.note = '';
+            }
+            if (typeof layout.narrator !== 'string') {
+                layout.narrator = '';
             }
             if (!layout.cards || typeof layout.cards !== 'object') {
                 layout.cards = {};
@@ -438,16 +451,68 @@ async function applyLayoutMembership() {
 }
 
 /**
+ * Posts the layout's narrator line as the message that opens the scene.
+ *
+ * Called from the greeting hook while the chat is still empty, which is the
+ * only moment a message can be put ahead of the greetings without reprinting
+ * the chat: getGroupChat() empties chat[] and then pushes one greeting per
+ * member, so pushing here lands at index 0 and the greetings queue up behind
+ * it. addOneMessage() resolves its id with chat.indexOf(), so the ids stay
+ * right as the loop appends.
+ *
+ * The message is a narrator-type one, which is what earns it the system avatar
+ * and, in formatMessageHistoryItem(), a place in the prompt with no name in
+ * front of it — scene text rather than a line of dialogue.
+ * @param {Layout} layout
+ * @returns {Promise<void>}
+ */
+async function postNarrator(layout) {
+    const text = layout.narrator.trim();
+
+    if (!text) {
+        return;
+    }
+
+    const message = {
+        name: String(chat_metadata[NARRATOR_NAME_KEY] || t`Narrator`),
+        is_user: false,
+        is_system: false,
+        send_date: getMessageTimeStamp(),
+        mes: substituteParams(text),
+        force_avatar: system_avatar,
+        extra: {
+            type: system_message_types.NARRATOR,
+            gen_id: Date.now() * Math.random() * 1000000,
+        },
+    };
+
+    chat.push(message);
+    // Emitted the way the greeting loop emits its own, so extensions that act
+    // on new messages — TTS, translation — see this one too.
+    await eventSource.emit(event_types.MESSAGE_RECEIVED, (chat.length - 1), 'first_message');
+    addOneMessage(message);
+    await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, (chat.length - 1), 'first_message');
+}
+
+/**
  * Applies the selected layout to one member's greeting while a group chat is
  * being created. Fires once per member, before its message is built.
  * @param {{input: string, output: string, character: object}} args
+ * @returns {Promise<void>}
  */
-function applyLayoutGreeting(args) {
+async function applyLayoutGreeting(args) {
     const layout = getActiveLayout(getActiveRoster());
     const avatar = args?.character?.avatar;
 
     if (!layout || !avatar) {
         return;
+    }
+
+    // An empty chat means no greeting has been posted yet, so this is the first
+    // member the loop has reached. Checking the chat rather than counting calls
+    // keeps it right when the earlier members were all suppressed.
+    if (!chat.length) {
+        await postNarrator(layout);
     }
 
     const entry = getLayoutEntry(layout, avatar);
@@ -1000,6 +1065,9 @@ const settingsHtml = `
                     </div>
                 </div>
                 <div id="gr_layout_body">
+                    <label for="gr_layout_narrator">Narrator opening</label>
+                    <textarea id="gr_layout_narrator" class="text_pole textarea_compact" rows="3"
+                              placeholder="Posted before the greetings to set the scene. Leave blank for none."></textarea>
                     <label for="gr_layout_note">Author's Note for this layout</label>
                     <textarea id="gr_layout_note" class="text_pole textarea_compact" rows="3"
                               placeholder="Overrides the group's note while this layout is selected"></textarea>
@@ -1454,6 +1522,7 @@ function renderSettings() {
     renderLayoutCards();
     $('#gr_roster_note').val(getSettingsRoster()?.note ?? '').prop('disabled', !getSettingsRoster());
     $('#gr_layout_note').val(getSettingsLayout()?.note ?? '');
+    $('#gr_layout_narrator').val(getSettingsLayout()?.narrator ?? '');
 }
 
 function addSettings() {
@@ -1553,7 +1622,7 @@ function addSettings() {
         }
 
         /** @type {Layout} */
-        const layout = { id: uuidv4(), name: String(name).trim(), note: '', cards: {} };
+        const layout = { id: uuidv4(), name: String(name).trim(), note: '', narrator: '', cards: {} };
 
         // Seeded from the cast the group has right now, so a new layout starts
         // out doing what the group already does and is edited down from there.
@@ -1624,6 +1693,17 @@ function addSettings() {
         // The footer toggle prefers this note over the group's, and its checked
         // state compares against whichever is in play.
         refreshPanel();
+    });
+
+    $('#gr_layout_narrator').on('input', function () {
+        const layout = getSettingsLayout();
+
+        if (!layout) {
+            return;
+        }
+
+        layout.narrator = String($(this).val());
+        saveSettingsDebounced();
     });
 
     $('#gr_settings_search').on('input', renderRosterLists);
