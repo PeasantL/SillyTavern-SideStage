@@ -931,11 +931,6 @@ function deepScanForImages(obj, foundSet, visited = new WeakSet()) {
   );
 }
 
-function bringToFront($win) {
-  $(".civ-window-standard, .civ-window-frameless").css("z-index", 500);
-  $win.css("z-index", 501);
-}
-
 // The viewer's home: flush with the right edge, 24px up from the bottom.
 // Recomputed from the current size so it still lands correctly after a
 // resize or an orientation change.
@@ -1121,7 +1116,6 @@ function spawnGalleryWindow(images, charName) {
 
   $("body").append(html);
   const $win = $(`#${GALLERY_ID}`);
-  bringToFront($win);
 
   const close = () => $win.remove();
   $win
@@ -1133,9 +1127,6 @@ function spawnGalleryWindow(images, charName) {
         close();
       }
     });
-  $win.on("mousedown", function () {
-    bringToFront($(this));
-  });
 
   const open = (el) => spawnSingleImageWindow($(el).data("index"), images);
   const $thumbs = $win.find(".civ-thumb");
@@ -1243,7 +1234,6 @@ function spawnSingleImageWindow(startIndex, allImages) {
     viewerState.images = allImages;
     viewerState.failures = 0;
     updateImage(startIndex);
-    bringToFront(viewerState.$win);
     return;
   }
 
@@ -1328,8 +1318,7 @@ function spawnSingleImageWindow(startIndex, allImages) {
     };
     $win.data(FOLLOW_SPAWN_KEY, true);
     $win.data(ANCHOR_KEY, { top, left });
-    bringToFront($win);
-
+  
     // Draggable & Resizable (locked to aspect ratio)
     if ($.fn.draggable)
       $win.draggable({
@@ -1393,9 +1382,6 @@ function spawnSingleImageWindow(startIndex, allImages) {
           resetViewerPosition();
         }
       });
-    $win.on("mousedown", function () {
-      bringToFront($(this));
-    });
 
     const step = (delta) => {
       if (viewerState) updateImage(viewerState.index + delta);

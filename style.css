@@ -16,6 +16,22 @@
     height: 45vh;
 }
 
+/* Fixed stacking order rather than a click-to-front scramble. The gallery is a
+   drill-down you open, pick from and dismiss, so it covers the roster outright
+   instead of splitting the slot; closing it reveals the roster underneath.
+   The frameless viewer sits above both, so dragging it over the dock works. */
+.gr-window.ss-dock {
+    z-index: 500;
+}
+
+.civ-window-standard.ss-dock {
+    z-index: 501;
+}
+
+.civ-window-frameless {
+    z-index: 502;
+}
+
 /* ═══════════════════════ Group roster ═══════════════════════ */
 
 /* ---- Window ------------------------------------------------------------- */
