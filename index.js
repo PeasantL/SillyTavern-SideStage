@@ -1375,15 +1375,25 @@ function makeLayoutCheckbox({ checked, disabled, title, onChange }) {
 /**
  * Builds the greeting picker for one card. Only group greetings are offered;
  * a card without any can still greet, just not from a pinned line.
+ *
+ * Returned wrapped in a cell, because the cell is what shrinks: Safari sizes a
+ * <select> to its widest option and will not go below that however min-width is
+ * set, so on iOS the select is told to fill a cell that can shrink instead of
+ * being the flex item itself.
  * @param {Layout} layout
  * @param {string} avatar
  * @param {object} [character]
  * @param {LayoutEntry} entry
- * @returns {HTMLSelectElement}
+ * @returns {HTMLElement}
  */
 function makeGreetingSelect(layout, avatar, character, entry) {
+    const cell = document.createElement('div');
+    cell.classList.add('gr-layout-greeting');
+
     const select = document.createElement('select');
-    select.classList.add('text_pole', 'gr-layout-greeting');
+    select.classList.add('text_pole', 'gr-layout-greeting-select');
+    cell.appendChild(select);
+
     const greetings = getGroupGreetings(character);
 
     if (!greetings.length) {
@@ -1392,7 +1402,7 @@ function makeGreetingSelect(layout, avatar, character, entry) {
         select.appendChild(option);
         select.disabled = true;
         select.title = t`Only group greetings can be pinned. Add some from the button beside Alt. Greetings on the card.`;
-        return select;
+        return cell;
     }
 
     const random = document.createElement('option');
@@ -1403,8 +1413,10 @@ function makeGreetingSelect(layout, avatar, character, entry) {
     greetings.forEach((text, index) => {
         const option = document.createElement('option');
         option.value = String(index);
+        // Short enough that the dropdown stays narrow on a phone or tablet; the
+        // full text is on the title for anywhere that shows one.
         const summary = text.replace(/\s+/g, ' ').trim();
-        option.textContent = `${index + 1}. ${summary.length > 60 ? `${summary.slice(0, 60)}…` : summary}`;
+        option.textContent = `${index + 1}. ${summary.length > 28 ? `${summary.slice(0, 28)}…` : summary}`;
         option.title = text;
         select.appendChild(option);
     });
@@ -1420,7 +1432,7 @@ function makeGreetingSelect(layout, avatar, character, entry) {
         setLayoutEntry(layout, avatar, { greeting: select.value === '' ? null : Number(select.value) });
     });
 
-    return select;
+    return cell;
 }
 
 /**
