@@ -554,20 +554,16 @@ const settingsHtml = `
 
             <div class="ss-settings-section">
                 <div class="ss-settings-heading">Images</div>
-                <label class="checkbox_label" for="civ-auto-open" title="Opens the floating viewer whenever a character or group with images is selected.">
-                    <input id="civ-auto-open" type="checkbox">
-                    <span>Open the viewer automatically on character select</span>
-                </label>
-                <small class="civ-settings-note">
-                    Turning this off leaves no way to open the viewer, since the gallery is reached from it.
-                </small>
-                <label class="checkbox_label" for="civ-change-with-greeting" title="Opens on the image referenced by the greeting on screen, and switches when you swipe to an alternate greeting.">
-                    <input id="civ-change-with-greeting" type="checkbox">
-                    <span>Change with Greeting</span>
-                </label>
-                <small class="civ-settings-note">
-                    With this off, the viewer opens on the first image found and stays put until you navigate it yourself.
-                </small>
+                <div class="ss-settings-toggles">
+                    <label class="checkbox_label" for="civ-auto-open" title="Opens the floating viewer whenever a character or group with images is selected. With this off there is no way to open the viewer, since the gallery is reached from it.">
+                        <input id="civ-auto-open" type="checkbox">
+                        <span>Open automatically</span>
+                    </label>
+                    <label class="checkbox_label" for="civ-change-with-greeting" title="Opens on the image referenced by the greeting on screen, and switches when you swipe to an alternate greeting. With this off the viewer opens on the first image found and stays put until you navigate it yourself.">
+                        <input id="civ-change-with-greeting" type="checkbox">
+                        <span>Change with greeting</span>
+                    </label>
+                </div>
             </div>
         </div>
     </div>

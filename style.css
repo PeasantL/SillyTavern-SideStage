@@ -649,6 +649,20 @@
     opacity: 0.6;
 }
 
+/* Both toggles on one line; what the sub-text used to say now lives in their
+   title attributes, so nothing was lost with it. */
+.ss-settings-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 18px;
+}
+
+.ss-settings-toggles .checkbox_label {
+    flex: 0 1 auto;
+    margin: 0;
+}
+
 .ss-settings-divider {
     height: 1px;
     margin: 12px 0;
