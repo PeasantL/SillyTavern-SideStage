@@ -48,6 +48,21 @@
     z-index: 501;
 }
 
+/* ST's zoomed avatar — click an avatar in the chat — is absolutely positioned
+   and lands in the same corner as the dock on any theme that moves it right.
+   Core leaves it at z-index 29 (waifuMode) or 30 (mobile), well under the dock,
+   so it opened behind the panel. Lift it over everything here: it is opened and
+   dismissed by hand, so it only covers the dock while the user is looking at it,
+   and 510 still sits far below core's dialogs and popups.
+
+   Both halves of core's rule are matched, waifuMode and not, so this wins on
+   specificity and load order — extension CSS is appended to <head> after the
+   core sheets — rather than on !important. */
+body:not(.waifuMode) .zoomed_avatar,
+body.waifuMode .zoomed_avatar {
+    z-index: 510;
+}
+
 /* Hover feedback is gated behind (hover: hover). On a touch screen :hover
    latches after a tap and never clears, so tapped roster cards, settings rows
    and thumbnails all stayed lit at once — several characters looking active
