@@ -47,12 +47,29 @@ const PANEL_ID = 'groupRoster';
  */
 let focusedAvatar = null;
 
+/**
+ * @typedef {object} Roster
+ * @property {string[]} cards Avatar file names in this group's pool, in display order
+ * @property {string} note Author's Note the footer toggle fills the chat with
+ */
+
 const rosterDefaults = {
-    /** @type {{id: string, name: string, cards: string[], note: string}[]} */
-    rosters: [],
-    /** @type {string} Id of the roster the panel displays. */
-    activeRosterId: '',
+    /** @type {Record<string, Roster>} Rosters by group id. One per group, created on demand. */
+    groups: {},
+    /**
+     * Free-standing rosters from before rosters followed groups. Kept only so
+     * their card lists can be imported into a group, never edited in place.
+     * @type {{id: string, name: string, cards: string[], note: string}[]}
+     */
+    legacyRosters: [],
 };
+
+/**
+ * Group whose roster the settings drawer edits. Empty means "follow the open
+ * group", which is the state it returns to whenever the chat changes.
+ * @type {string}
+ */
+let settingsGroupId = '';
 
 function getSettings() {
     if (!extension_settings[MODULE_NAME]) {
@@ -70,37 +87,104 @@ function getSettings() {
     // Migration from the single flat card list this extension shipped with.
     if (Array.isArray(settings.cards)) {
         if (settings.cards.length) {
-            settings.rosters.push({ id: uuidv4(), name: t`Default`, cards: settings.cards, note: '' });
+            settings.legacyRosters.push({ id: uuidv4(), name: t`Default`, cards: settings.cards, note: '' });
         }
         delete settings.cards;
     }
 
-    if (!settings.rosters.length) {
-        settings.rosters.push({ id: uuidv4(), name: t`Default`, cards: [], note: '' });
+    // Migration from free-standing rosters. A roster was deliberately not tied
+    // to a group, so there is nothing to bind these to without guessing; they
+    // are parked for a manual import instead of being assigned automatically.
+    if (Array.isArray(settings.rosters)) {
+        settings.legacyRosters.push(...settings.rosters.filter(x => x?.cards?.length || x?.note));
+        delete settings.rosters;
+        delete settings.activeRosterId;
     }
 
-    for (const roster of settings.rosters) {
+    for (const roster of Object.values(settings.groups)) {
+        if (!Array.isArray(roster.cards)) {
+            roster.cards = [];
+        }
         if (typeof roster.note !== 'string') {
             roster.note = '';
         }
     }
 
-    if (!settings.rosters.some(x => x.id === settings.activeRosterId)) {
-        settings.activeRosterId = settings.rosters[0].id;
-    }
-
     return settings;
 }
 
-/** @returns {{id: string, name: string, cards: string[], note: string}} The roster the panel shows. */
-function getActiveRoster() {
+/**
+ * The roster for one group, created on first use and seeded from that group's
+ * current members so a group opens with its cast already in the panel.
+ * @param {string} [groupId]
+ * @param {object} [options]
+ * @param {boolean} [options.create=true] Create the roster if it doesn't exist yet
+ * @returns {Roster|null}
+ */
+function getRoster(groupId, { create = true } = {}) {
+    if (!groupId) {
+        return null;
+    }
+
     const settings = getSettings();
-    return settings.rosters.find(x => x.id === settings.activeRosterId) ?? settings.rosters[0];
+
+    if (!settings.groups[groupId] && create) {
+        const group = groups.find(x => x.id === groupId);
+        settings.groups[groupId] = { cards: [...(group?.members ?? [])], note: '' };
+        saveSettingsDebounced();
+    }
+
+    return settings.groups[groupId] ?? null;
 }
 
-/** @returns {string[]} Avatar file names in the active roster. */
+/** @returns {Roster|null} The roster for the open group chat. */
+function getActiveRoster() {
+    return getRoster(getCurrentGroup()?.id);
+}
+
+/** @returns {string[]} Avatar file names in the open group's roster. */
 function getActiveCards() {
     return getActiveRoster()?.cards ?? [];
+}
+
+/** @returns {string} Id of the group the settings drawer is editing. */
+function getSettingsGroupId() {
+    if (settingsGroupId && groups.some(x => x.id === settingsGroupId)) {
+        return settingsGroupId;
+    }
+
+    return getCurrentGroup()?.id ?? groups[0]?.id ?? '';
+}
+
+/** @returns {Roster|null} The roster the settings drawer edits. */
+function getSettingsRoster() {
+    return getRoster(getSettingsGroupId());
+}
+
+/**
+ * Drops rosters whose group is gone. There is no group-deleted event — only
+ * GROUP_CHAT_DELETED — so this sweeps once the group list is known rather than
+ * reacting to the deletion itself. Bails while the list is empty, since that is
+ * indistinguishable from it not having loaded yet.
+ */
+function pruneOrphanRosters() {
+    if (!groups.length) {
+        return;
+    }
+
+    const settings = getSettings();
+    let dirty = false;
+
+    for (const id of Object.keys(settings.groups)) {
+        if (!groups.some(x => x.id === id)) {
+            delete settings.groups[id];
+            dirty = true;
+        }
+    }
+
+    if (dirty) {
+        saveSettingsDebounced();
+    }
 }
 
 /** @returns {object|null} The currently open group, or null if not in a group chat. */
@@ -294,7 +378,7 @@ function setNoteApplied(shouldApply) {
     const roster = getActiveRoster();
 
     if (shouldApply && !roster?.note) {
-        toastr.info(t`This roster has no Author's Note. Set one in Extensions → Group Roster.`);
+        toastr.info(t`This group has no Author's Note. Set one in Extensions → SideStage.`);
         return;
     }
 
@@ -468,48 +552,6 @@ function makeCardRow(avatar) {
     return row;
 }
 
-/**
- * Switches the active roster and brings every view of it back in step.
- * Shared by the panel footer's picker and the settings drawer's.
- * @param {string} id
- */
-function setActiveRoster(id) {
-    getSettings().activeRosterId = String(id);
-    saveSettingsDebounced();
-    renderSettings();
-    refreshPanel();
-}
-
-/**
- * Repaints the footer's roster picker, but only when the roster list itself
- * changed: refreshPanel() runs on every generation event, and rebuilding the
- * options each time would shut the dropdown under the user mid-choice.
- */
-function refreshRosterPicker() {
-    const picker = /** @type {HTMLSelectElement} */ (document.getElementById('groupRosterPicker'));
-
-    if (!picker) {
-        return;
-    }
-
-    const settings = getSettings();
-    const signature = settings.rosters.map(x => `${x.id}:${x.name}`).join('\u0000');
-
-    if (picker.dataset.signature !== signature) {
-        picker.dataset.signature = signature;
-        picker.innerHTML = '';
-
-        for (const roster of settings.rosters) {
-            const option = document.createElement('option');
-            option.value = roster.id;
-            option.textContent = roster.name;
-            picker.appendChild(option);
-        }
-    }
-
-    picker.value = settings.activeRosterId;
-}
-
 /** Re-renders the card list inside an already open panel. */
 function refreshPanel() {
     const list = document.getElementById('groupRosterList');
@@ -533,12 +575,10 @@ function refreshPanel() {
         noteToggle.disabled = !getActiveRoster()?.note;
     }
 
-    refreshRosterPicker();
-
     if (!cards.length) {
         const empty = document.createElement('div');
         empty.classList.add('gr-empty');
-        empty.textContent = t`No cards in this roster. Add them in Extensions → Group Roster.`;
+        empty.textContent = t`No cards in this group's roster. Add them in Extensions → SideStage.`;
         list.appendChild(empty);
         return;
     }
@@ -565,20 +605,18 @@ function openPanel() {
     const html = `
         <div id="${PANEL_ID}" class="gr-window ss-dock">
             <div class="gr-header">
-                <span class="gr-title">${t`Group Roster`}<small id="groupRosterStatus" class="gr-status"></small></span>
+                <span class="gr-title">${t`SideStage`}<small id="groupRosterStatus" class="gr-status"></small></span>
             </div>
             <div class="gr-body">
                 <div id="groupRosterList" class="gr-grid"></div>
             </div>
             <div class="gr-footer">
                 <label id="groupRosterNoteToggle" class="gr-footer-btn gr-footer-toggle"
-                       title="${t`Fill this chat's Author's Note with the active roster's note`}">
+                       title="${t`Fill this chat's Author's Note with this group's note`}">
                     <input type="checkbox">
                     <i class="fa-solid fa-note-sticky fa-fw"></i>
                     <span>${t`Author's Note`}</span>
                 </label>
-                <select id="groupRosterPicker" class="gr-footer-select"
-                        title="${t`Switch the active roster`}"></select>
             </div>
         </div>`;
 
@@ -587,10 +625,6 @@ function openPanel() {
 
     $win.find('#groupRosterNoteToggle input').on('change', function () {
         setNoteApplied(this.checked);
-    });
-
-    $win.find('#groupRosterPicker').on('change', function () {
-        setActiveRoster(String($(this).val()));
     });
 
     refreshPanel();
@@ -610,20 +644,19 @@ const settingsHtml = `
         <div class="inline-drawer-content">
             <div class="ss-settings-section">
                 <div class="ss-settings-heading">Roster</div>
-                <label for="gr_roster_select">Active roster</label>
-                <div class="flex-container alignItemsCenter">
-                    <select id="gr_roster_select" class="text_pole flex1"></select>
-                    <div id="gr_roster_new" class="menu_button menu_button_icon interactable" title="New roster">
-                        <i class="fa-solid fa-plus fa-fw"></i>
-                    </div>
-                    <div id="gr_roster_rename" class="menu_button menu_button_icon interactable" title="Rename roster">
-                        <i class="fa-solid fa-pen fa-fw"></i>
-                    </div>
-                    <div id="gr_roster_delete" class="menu_button menu_button_icon interactable" title="Delete roster">
-                        <i class="fa-solid fa-trash fa-fw"></i>
+                <label for="gr_group_select">Group</label>
+                <select id="gr_group_select" class="text_pole"></select>
+                <div id="gr_legacy_block">
+                    <label for="gr_legacy_select">Leftover rosters (from before rosters followed groups)</label>
+                    <div class="flex-container alignItemsCenter">
+                        <select id="gr_legacy_select" class="text_pole flex1"></select>
+                        <div id="gr_legacy_import" class="menu_button interactable gr-flat-button" title="Add this roster's cards to the group above">Import</div>
+                        <div id="gr_legacy_discard" class="menu_button menu_button_icon interactable" title="Discard every leftover roster">
+                            <i class="fa-solid fa-trash fa-fw"></i>
+                        </div>
                     </div>
                 </div>
-                <label for="gr_roster_note">Author's Note for this roster</label>
+                <label for="gr_roster_note">Author's Note for this group</label>
                 <textarea id="gr_roster_note" class="text_pole textarea_compact" rows="3"
                           placeholder="Filled into this chat's Author's Note when the panel toggle is on"></textarea>
                 <div class="gr-lists">
@@ -661,27 +694,60 @@ const settingsHtml = `
     </div>
 </div>`;
 
-/** Fills the roster dropdown from settings. */
-function renderRosterSelect() {
-    const settings = getSettings();
-    const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_roster_select'));
+/** Fills the group dropdown, which is what picks the roster being edited. */
+function renderGroupSelect() {
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_group_select'));
 
     if (!select) {
         return;
     }
 
     select.innerHTML = '';
+    select.disabled = !groups.length;
 
-    for (const roster of settings.rosters) {
+    if (!groups.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = t`No group chats yet`;
+        select.appendChild(option);
+        return;
+    }
+
+    for (const group of groups) {
+        const option = document.createElement('option');
+        option.value = group.id;
+        // create: false so merely listing the groups doesn't seed a roster for
+        // every one of them; the count falls back to the cast it would seed from.
+        const count = getRoster(group.id, { create: false })?.cards.length ?? group.members?.length ?? 0;
+        option.textContent = `${group.name} (${count})`;
+        select.appendChild(option);
+    }
+
+    select.value = getSettingsGroupId();
+}
+
+/**
+ * Shows the leftover-roster import row, and hides it for good once there is
+ * nothing left to import.
+ */
+function renderLegacyImport() {
+    const settings = getSettings();
+    const block = document.getElementById('gr_legacy_block');
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_legacy_select'));
+
+    if (!block || !select) {
+        return;
+    }
+
+    block.style.display = settings.legacyRosters.length ? '' : 'none';
+    select.innerHTML = '';
+
+    for (const roster of settings.legacyRosters) {
         const option = document.createElement('option');
         option.value = roster.id;
         option.textContent = `${roster.name} (${roster.cards.length})`;
         select.appendChild(option);
     }
-
-    select.value = settings.activeRosterId;
-    // Deleting the last roster is blocked so there is always one to fall back to.
-    $('#gr_roster_delete').toggleClass('disabled', settings.rosters.length <= 1);
 }
 
 /**
@@ -711,7 +777,12 @@ function makeSettingsRow(character, isMember) {
     row.append(thumb, name, action);
 
     const toggle = () => {
-        const roster = getActiveRoster();
+        const roster = getSettingsRoster();
+
+        if (!roster) {
+            return;
+        }
+
         const index = roster.cards.indexOf(character.avatar);
 
         if (isMember && index !== -1) {
@@ -721,7 +792,7 @@ function makeSettingsRow(character, isMember) {
         }
 
         saveSettingsDebounced();
-        renderRosterSelect();
+        renderGroupSelect();
         renderRosterLists();
         refreshPanel();
     };
@@ -746,7 +817,7 @@ function renderRosterLists() {
         return;
     }
 
-    const roster = getActiveRoster();
+    const roster = getSettingsRoster();
     const searchInput = /** @type {HTMLInputElement} */ (document.getElementById('gr_settings_search'));
     const term = (searchInput?.value ?? '').trim().toLowerCase();
 
@@ -755,7 +826,15 @@ function renderRosterLists() {
 
     const inCount = document.getElementById('gr_in_count');
     if (inCount) {
-        inCount.textContent = String(roster.cards.length);
+        inCount.textContent = String(roster?.cards.length ?? 0);
+    }
+
+    if (!roster) {
+        const empty = document.createElement('div');
+        empty.classList.add('gr-empty');
+        empty.textContent = t`Create a group chat first — rosters belong to a group.`;
+        inList.appendChild(empty);
+        return;
     }
 
     // Roster order is meaningful, so walk cards rather than the character list.
@@ -798,81 +877,84 @@ function renderRosterLists() {
 }
 
 function renderSettings() {
-    renderRosterSelect();
+    renderGroupSelect();
+    renderLegacyImport();
     renderRosterLists();
-    $('#gr_roster_note').val(getActiveRoster()?.note ?? '');
+    $('#gr_roster_note').val(getSettingsRoster()?.note ?? '').prop('disabled', !getSettingsRoster());
 }
 
 function addSettings() {
     $('#extensions_settings2').append(settingsHtml);
 
-    $('#gr_roster_select').on('change', function () {
-        setActiveRoster(String($(this).val()));
+    $('#gr_group_select').on('change', function () {
+        settingsGroupId = String($(this).val());
+        renderSettings();
     });
 
-    $('#gr_roster_new').on('click', async () => {
-        const name = await Popup.show.input(t`New roster`, t`Name for the new roster`, '');
+    $('#gr_legacy_import').on('click', () => {
+        const roster = getSettingsRoster();
 
-        if (!name) {
+        if (!roster) {
+            toastr.warning(t`Create a group chat first.`);
             return;
         }
 
-        const settings = getSettings();
-        const roster = { id: uuidv4(), name: String(name).trim(), cards: [], note: '' };
-        settings.rosters.push(roster);
-        settings.activeRosterId = roster.id;
+        const legacy = getSettings().legacyRosters.find(x => x.id === String($('#gr_legacy_select').val()));
+
+        if (!legacy) {
+            return;
+        }
+
+        // Union rather than replace: importing twice, or importing two
+        // overlapping rosters, must not duplicate a card.
+        const added = legacy.cards.filter(x => !roster.cards.includes(x));
+        roster.cards.push(...added);
         saveSettingsDebounced();
         renderSettings();
         refreshPanel();
+        toastr.info(added.length
+            ? t`Added ${added.length} card(s) to this group's roster.`
+            : t`Every card was already in this group's roster.`);
     });
 
-    $('#gr_roster_rename').on('click', async () => {
-        const roster = getActiveRoster();
-        const name = await Popup.show.input(t`Rename roster`, t`New name`, roster.name);
-
-        if (!name) {
-            return;
-        }
-
-        roster.name = String(name).trim();
-        saveSettingsDebounced();
-        renderRosterSelect();
-    });
-
-    $('#gr_roster_delete').on('click', async () => {
-        const settings = getSettings();
-
-        if (settings.rosters.length <= 1) {
-            toastr.warning(t`The last roster can't be deleted.`);
-            return;
-        }
-
-        const roster = getActiveRoster();
-        const confirmed = await Popup.show.confirm(t`Delete roster`, t`Delete "${roster.name}"? Its card list is lost.`);
+    $('#gr_legacy_discard').on('click', async () => {
+        const confirmed = await Popup.show.confirm(
+            t`Discard leftover rosters`,
+            t`Delete every roster left over from before rosters followed groups? Group rosters are not touched.`);
 
         if (!confirmed) {
             return;
         }
 
-        settings.rosters = settings.rosters.filter(x => x.id !== roster.id);
-        settings.activeRosterId = settings.rosters[0].id;
+        getSettings().legacyRosters = [];
         saveSettingsDebounced();
         renderSettings();
-        refreshPanel();
     });
 
     $('#gr_roster_note').on('input', function () {
-        getActiveRoster().note = String($(this).val());
+        const roster = getSettingsRoster();
+
+        if (!roster) {
+            return;
+        }
+
+        roster.note = String($(this).val());
         saveSettingsDebounced();
-        // The footer toggle greys out for a roster with no note, and its
-        // checked state compares against this text.
+        // The footer toggle greys out for a group with no note, and its checked
+        // state compares against this text.
         refreshPanel();
     });
 
     $('#gr_settings_search').on('input', renderRosterLists);
 
     $('#gr_settings_clear').on('click', () => {
-        getActiveRoster().cards = [];
+        const roster = getSettingsRoster();
+
+        if (!roster) {
+            return;
+        }
+
+        roster.cards = [];
         saveSettingsDebounced();
         renderSettings();
         refreshPanel();
@@ -909,6 +991,13 @@ function addSettings() {
  */
 function syncPanelToChat() {
     focusedAvatar = null;
+    // Hand the drawer back to the open group; a hand-picked group only outlives
+    // the chat it was picked during if the user picks it again.
+    settingsGroupId = '';
+
+    if ($('.sidestage-settings .inline-drawer-content').is(':visible')) {
+        renderSettings();
+    }
 
     if (!selected_group) {
         closePanel();
@@ -1707,6 +1796,7 @@ jQuery(async () => {
     addSettings();
     addWandButton();
 
+    eventSource.on(event_types.APP_READY, pruneOrphanRosters);
     eventSource.on(event_types.CHAT_CHANGED, syncPanelToChat);
     eventSource.on(event_types.GROUP_UPDATED, refreshPanel);
     eventSource.on(event_types.GENERATION_ENDED, refreshPanel);

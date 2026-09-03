@@ -711,6 +711,15 @@
     gap: 4px;
 }
 
+/* Toggled with an inline display, so it needs its own column layout to fall
+   back to: the section's gap doesn't reach inside a wrapper. Hidden for good
+   once the last leftover roster has been imported or discarded. */
+#gr_legacy_block {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
 .ss-settings-heading {
     font-weight: bold;
     text-transform: uppercase;
