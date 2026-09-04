@@ -2215,12 +2215,11 @@ function getViewerIdentityKey(ctx) {
   return active[0]?.avatar ? `char:${active[0].avatar}` : null;
 }
 
-// The image each cast was last left on, so a member who speaks again comes back
-// to where you were instead of to the top of its list. URLs rather than indices,
-// because a rescan can reorder or resize the list. Only ever filled in a group
-// chat — viewerIdentityKey stays null elsewhere, so a solo chat keeps following
-// the greeting and resetting from there. Session-only, and dropped whenever the
-// chat context changes.
+// The image each cast was last left on, so a cast that comes back — a member
+// who speaks again, or the one character in a solo chat once their turn lands —
+// returns to where you were instead of to the top of its list. URLs rather than
+// indices, because a rescan can reorder or resize the list. Session-only, and
+// dropped whenever the chat context changes.
 const lastViewedByIdentity = new Map();
 let viewerIdentityKey = null;
 
@@ -2646,7 +2645,9 @@ function handleContextChange() {
   if (key === null) return;
 
   const result = scanAndGetImages();
-  viewerIdentityKey = ctx.groupId ? getViewerIdentityKey(ctx) : null;
+  // Set before the window opens, so the image it lands on is what gets
+  // remembered for this cast.
+  viewerIdentityKey = getViewerIdentityKey(ctx);
   if (imageSettings.autoOpen && result && result.images.length > 0) {
     // Lead with whatever the greeting on screen points at.
     const startIndex = imageSettings.changeWithGreeting
@@ -2691,9 +2692,10 @@ function handleMessageSwiped(mesId) {
 }
 
 /**
- * The image source itself changed — a different character is being shown — so
- * the viewer starts at the top of the new list rather than keeping its index.
- * A closed viewer is left closed: only a context change opens one uninvited.
+ * The image source may have changed — a different character is being shown — so
+ * the viewer re-aims at whatever the incoming cast was last left on, and at the
+ * top of the list for a cast that has not been seen yet. A closed viewer is
+ * left closed: only a context change opens one uninvited.
  */
 function refocusViewer() {
   if (lastContextKey === null) return;
@@ -2702,10 +2704,10 @@ function refocusViewer() {
   const result = scanAndGetImages();
   if (!result) return;
 
-  // In a group the turn passes between casts, so pick up where this one was
-  // left rather than at the top of its list. Anywhere else the list belongs to
-  // a single character and the viewer starts over, as it always has.
-  const nextKey = ctx?.groupId ? getViewerIdentityKey(ctx) : null;
+  // Pick up where this cast was left rather than at the top of its list: in a
+  // group the turn passes between casts, and in a solo chat the list never
+  // changed at all, so a finished turn should not undo browsing either.
+  const nextKey = getViewerIdentityKey(ctx);
   const startIndex = Math.max(0, recallViewedIndex(nextKey, result.images));
   viewerIdentityKey = nextKey;
 
@@ -2732,7 +2734,7 @@ function handleContentUpdate() {
   if (!result) return;
 
   // A membership edit can hand the viewer to a different cast without a turn.
-  viewerIdentityKey = ctx?.groupId ? getViewerIdentityKey(ctx) : null;
+  viewerIdentityKey = getViewerIdentityKey(ctx);
 
   if (viewerState && $(`#${SINGLE_VIEWER_ID}`).length > 0) {
     if (result.images.length === 0) {
