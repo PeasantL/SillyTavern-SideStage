@@ -147,8 +147,7 @@ body.waifuMode .zoomed_avatar {
     background-color: var(--smart-app-bar-color, #2a2a2a);
 }
 
-/* The only footer control, kept compact so it reads as a status toggle
-   rather than a primary action. */
+/* Kept compact so it reads as a status toggle rather than a primary action. */
 #groupRosterNoteToggle {
     flex: 0 0 auto;
     gap: 5px;
@@ -223,6 +222,37 @@ body.waifuMode .zoomed_avatar {
 .gr-footer-btn:focus-visible {
     outline: 2px solid var(--smart-theme-color, #007bff);
     outline-offset: 2px;
+}
+
+/* The rewrite row, above the note and layout row. Three equal widths, so it
+   reads as a toolbar rather than as three differently weighted buttons. */
+.gr-footer-action {
+    flex: 1 1 0;
+    min-width: 0;
+    gap: 5px;
+    padding: 4px 6px;
+    font-size: calc(var(--mainFontSize) * 0.8);
+}
+
+.gr-footer-action i {
+    font-size: 0.9em;
+}
+
+/* Truncates rather than pushing the footer wider than the dock. */
+.gr-footer-action span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* One action at a time, and each takes a round trip: the whole row goes inert,
+   with only the running button left lit so it is clear which one you pressed. */
+.gr-footer-actions:has(.gr-footer-action-busy) .gr-footer-action {
+    pointer-events: none;
+}
+
+.gr-footer-actions:has(.gr-footer-action-busy) .gr-footer-action:not(.gr-footer-action-busy) {
+    opacity: 0.4;
 }
 
 .gr-status {
@@ -899,4 +929,20 @@ body.waifuMode .zoomed_avatar {
     margin: 12px 0;
     background-color: var(--SmartThemeBorderColor);
     opacity: 0.5;
+}
+
+/* Sub-text under the connection picker. Quiet enough not to compete with the
+   labels above it; the warning variant is the drawer's only coloured text, so
+   it reads as the exception it is, and collapses when there is nothing to say. */
+.ss-settings-note {
+    opacity: 0.6;
+    line-height: 1.4;
+}
+
+.ss-settings-warn {
+    color: var(--warning);
+}
+
+.ss-settings-warn:empty {
+    display: none;
 }

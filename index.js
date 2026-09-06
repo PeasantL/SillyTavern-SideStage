@@ -24,7 +24,10 @@ import {
     chat,
     chat_metadata,
     addOneMessage,
+    updateMessageBlock,
     substituteParams,
+    generateRaw,
+    name1,
     system_message_types,
     system_avatar,
     default_avatar,
@@ -32,6 +35,7 @@ import {
     saveChatConditional,
 } from '../../../../script.js';
 import { getMessageTimeStamp } from '../../../RossAscends-mods.js';
+import { parseReasoningFromString } from '../../../reasoning.js';
 import { extension_settings } from '../../../extensions.js';
 import {
     groups,
@@ -96,6 +100,14 @@ const rosterDefaults = {
      * @type {{id: string, name: string, cards: string[], note: string}[]}
      */
     legacyRosters: [],
+    /**
+     * Connection profile the footer's rewrite actions run on, by name. Empty
+     * means whatever connection is currently selected. Held by name rather than
+     * by id because ids are regenerated when a profile is rebuilt, and the name
+     * is what the user picked in the dropdown.
+     * @type {string}
+     */
+    assistProfile: '',
 };
 
 /**
@@ -843,6 +855,494 @@ async function sendUserTurnOnly() {
 
 // #endregion
 
+// #region AI assist
+
+/**
+ * The footer's three rewrite actions.
+ *
+ * Each one is a stateless request of its own rather than a trip through
+ * Generate(): the chat's own prompt is never rebuilt or re-sent, so a rewrite
+ * costs one small call and leaves the ongoing conversation exactly as it was.
+ */
+
+/** Headroom over the source, so a rewrite is never clipped mid-sentence. */
+function assistBudget(text) {
+    return Math.min(4096, Math.max(512, Math.ceil(String(text ?? '').length / 2) + 256));
+}
+
+/**
+ * A result far shorter than its source means the model summarized instead of
+ * rewriting, or ran out of budget. Neither belongs in the chat. Directive is
+ * exempt: "make this shorter" is a fair thing to ask for.
+ */
+const ASSIST_MIN_LENGTH_RATIO = 0.6;
+
+const PERSPECTIVE_PROMPT = [
+    'You are a text editor. You correct the narrative perspective of one passage',
+    'of roleplay prose, and you change nothing else.',
+    '',
+    'The house perspective:',
+    'Narrate {{char}} and all other characters in third person, by name or by the',
+    'pronouns their card specifies. Never "I" for {{char}} outside quoted dialogue.',
+    'Narrate {{user}} in second person: "you," "your."',
+    '',
+    'Never touch spoken dialogue. Anything inside double quotes is already',
+    'correct: a character says "I" about themselves and "you" to {{user}}, and',
+    'that stays exactly as it is.',
+    '',
+    'Choosing pronouns: match whatever the passage already uses for a character.',
+    'Where it establishes none, use they/them. Never guess from a name.',
+    '',
+    'Rules you must follow exactly:',
+    '- Change only what the perspective requires: pronouns, the verb agreement',
+    '  that follows them, and the names used for {{user}}.',
+    '- Do not reword, restructure, shorten, expand or improve anything else.',
+    '- Do not change the tense, the meaning, or the order of events.',
+    '- Preserve every line break, paragraph and formatting mark (asterisks,',
+    '  quotes, brackets) exactly as it is.',
+    '- Tokens of the form [[M0]], [[M1]] are placeholders. Copy them through',
+    '  exactly as written.',
+    '- If the passage is already in the house perspective, return it completely',
+    '  unchanged.',
+    '',
+    'Output the rewritten passage and nothing else. No preamble, no explanation,',
+    'no code fences, no commentary.',
+].join('\n');
+
+const DIRECTIVE_PROMPT = [
+    'You are a text editor working inside a roleplay chat. You are shown the',
+    'conversation so far and then a directive. Rewrite the final character reply',
+    'so that it follows the directive, and change nothing the directive does not',
+    'ask for.',
+    '',
+    'Rules you must follow exactly:',
+    '- Rewrite only that final reply. Never continue the scene past it, and never',
+    '  write anyone else\'s turn or the next thing that happens.',
+    '- Keep the same speaker, and keep their voice, perspective and tense unless',
+    '  the directive says to change them.',
+    '- Match the formatting the rest of the chat uses: quotes for speech,',
+    '  asterisks where it uses them, a comparable length and paragraph rhythm.',
+    '- Do not open with a speaker name, a preamble, or a note on what you changed.',
+    '',
+    'Output the rewritten reply and nothing else. No code fences, no commentary.',
+].join('\n');
+
+const SPELLCHECK_PROMPT = [
+    'You are a copy editor. You correct one passage of text and return it.',
+    '',
+    'Correct:',
+    '- Misspelled words and typos.',
+    '- Punctuation, spacing and capitalisation errors.',
+    '- Clear grammar errors: subject-verb agreement, tense slips, wrong word',
+    '  forms, missing or doubled words.',
+    '',
+    'Leave alone:',
+    '- Word choice, tone, register and voice. Do not make the writing better.',
+    '- Sentence order, paragraph breaks and line breaks.',
+    '- Deliberate style: dialect, slang, sentence fragments, and roleplay',
+    '  formatting marks such as *asterisks*, quotes and brackets.',
+    '- Proper nouns and invented names, however unusual their spelling.',
+    '- Tokens of the form [[M0]], [[M1]] — placeholders. Copy them through',
+    '  exactly as written.',
+    '',
+    'If the text is already correct, return it completely unchanged.',
+    '',
+    'Output the corrected text and nothing else. No preamble, no explanation, no',
+    'code fences, no commentary, and no list of what you changed.',
+].join('\n');
+
+/**
+ * Connection profiles that can serve a one-shot request. Empty when the
+ * Connection Manager is disabled, which is what the settings note reports.
+ * @returns {{id: string, name: string}[]}
+ */
+function listAssistProfiles() {
+    try {
+        return SillyTavern.getContext().ConnectionManagerRequestService.getSupportedProfiles() ?? [];
+    } catch (error) {
+        console.warn('[SideStage] Could not list connection profiles', error);
+        return [];
+    }
+}
+
+/**
+ * The saved profile, or null for "use whatever connection is selected".
+ * @returns {{id: string, name: string}|null}
+ */
+function getAssistProfile() {
+    const name = getSettings().assistProfile;
+    return name ? listAssistProfiles().find(x => x.name === name) ?? null : null;
+}
+
+/**
+ * Hides {{macros}} behind inert tokens.
+ *
+ * Every path to a model runs substituteParams over what it sends, so an
+ * unmasked {{user}} would come back expanded — and be written into the message
+ * or the message box as a literal name, losing the macro for good.
+ * @param {string} text
+ * @returns {{masked: string, extras: string[]}}
+ */
+function maskMacros(text) {
+    const extras = [];
+    const masked = String(text ?? '').replace(/\{\{[^{}]*\}\}/g, (match) => {
+        extras.push(match);
+        return `[[M${extras.length - 1}]]`;
+    });
+
+    return { masked, extras };
+}
+
+/**
+ * @param {string} text
+ * @param {string[]} extras
+ * @returns {string}
+ */
+function unmaskMacros(text, extras) {
+    return String(text ?? '').replace(/\[\[M(\d+)\]\]/g, (match, index) => extras[Number(index)] ?? match);
+}
+
+/** Reasoning models leak their thinking into the body, and most models fence prose. */
+function cleanAssistOutput(raw) {
+    let out = String(raw ?? '');
+
+    try {
+        const parsed = parseReasoningFromString(out, { strict: false });
+        if (parsed && typeof parsed.content === 'string') {
+            out = parsed.content;
+        }
+    } catch (error) {
+        console.warn('[SideStage] Reasoning parse failed', error);
+    }
+
+    out = out.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/gi, '').trim();
+    const fence = out.match(/^```[^\n]*\n([\s\S]*?)\n?```$/);
+
+    return (fence ? fence[1] : out).trim();
+}
+
+/** Models echo the speaker label they were shown; the message already has one. */
+function stripSpeakerPrefix(text, name) {
+    const escaped = String(name ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return escaped
+        ? String(text ?? '').replace(new RegExp(`^\\s*${escaped}\\s*:\\s*`), '')
+        : String(text ?? '');
+}
+
+/**
+ * Runs one chat-shaped request and returns the cleaned reply.
+ * @param {{role: string, content: string}[]} messages
+ * @param {number} maxTokens
+ * @returns {Promise<string>}
+ */
+async function runAssistRequest(messages, maxTokens) {
+    const profile = getAssistProfile();
+
+    if (profile) {
+        const service = SillyTavern.getContext().ConnectionManagerRequestService;
+        // Text-completion profiles need the messages flattened through their
+        // instruct template; chat-completion profiles get the array back as-is.
+        const prompt = service.constructPrompt(messages, profile.id);
+        const isTextCompletion = service.validateProfile(profile)?.selected === 'textgenerationwebui';
+        // These are edits, not writing: reasoning would only be stripped off
+        // again, and on OpenRouter it is this pair that actually stops it
+        // rather than merely hiding it.
+        const overrides = isTextCompletion
+            ? { include_reasoning: false }
+            : { include_reasoning: false, reasoning_effort: 'min' };
+        const result = await service.sendRequest(profile.id, prompt, maxTokens, undefined, overrides);
+
+        return cleanAssistOutput(result?.content ?? result);
+    }
+
+    // No profile: the connection that is already selected. createRawPrompt puts
+    // a speaker name in front of every message unless the message carries one,
+    // and these already name their speaker inline, so an empty name is what
+    // keeps it from doubling them up.
+    const systemPrompt = messages.filter(x => x.role === 'system').map(x => x.content).join('\n\n');
+    const prompt = messages.filter(x => x.role !== 'system').map(x => ({ ...x, name: '' }));
+
+    return cleanAssistOutput(await generateRaw({ prompt, systemPrompt, responseLength: maxTokens }));
+}
+
+/**
+ * The last reply a character posted: what Perspective and Directive rewrite.
+ *
+ * Your own turns are skipped, so the button still lands on the reply once you
+ * have typed the next thing, and so are narrator lines, which belong to the
+ * scene rather than to anyone in it.
+ * @returns {number} Index into chat, or -1 when there is nothing to rewrite
+ */
+function getLatestCharacterMessageId() {
+    for (let index = chat.length - 1; index >= 0; index--) {
+        const message = chat[index];
+
+        if (!message || message.is_user || message.is_system) {
+            continue;
+        }
+
+        if (message.extra?.type === system_message_types.NARRATOR) {
+            continue;
+        }
+
+        if (String(message.mes ?? '').trim()) {
+            return index;
+        }
+    }
+
+    return -1;
+}
+
+/**
+ * Replaces a message's text in place and persists it.
+ *
+ * The swipe it is currently sitting on is written too, or the rewrite is undone
+ * the moment you swipe away and back.
+ * @param {number} messageId
+ * @param {string} text
+ * @returns {Promise<void>}
+ */
+async function replaceMessageText(messageId, text) {
+    const message = chat[messageId];
+    message.mes = text;
+
+    if (Array.isArray(message.swipes) && message.swipes[message.swipe_id] !== undefined) {
+        message.swipes[message.swipe_id] = text;
+    }
+
+    updateMessageBlock(messageId, message);
+    await saveChatConditional();
+}
+
+/**
+ * Every message up to and including one index, as role-tagged turns. Speakers
+ * are named inline so a group's voices stay apart; narrator lines go in
+ * unattributed, as the scene text they are.
+ * @param {number} lastId
+ * @returns {{role: string, content: string}[]}
+ */
+function buildChatMessages(lastId) {
+    const messages = [];
+
+    for (let index = 0; index <= lastId; index++) {
+        const message = chat[index];
+        const text = String(message?.mes ?? '').trim();
+
+        if (!message || message.is_system || !text) {
+            continue;
+        }
+
+        const isNarrator = message.extra?.type === system_message_types.NARRATOR;
+        messages.push({
+            role: message.is_user ? 'user' : 'assistant',
+            content: isNarrator ? text : `${message.name}: ${text}`,
+        });
+    }
+
+    return messages;
+}
+
+/** One action at a time, and never on top of a reply that is still arriving. */
+let assistRunning = false;
+
+/**
+ * Shared wrapper for the three footer actions: the generation guard, the
+ * button's own spinner, and one place for a failure to surface.
+ * @param {HTMLElement} button
+ * @param {string} label Used as the toast title when the run fails
+ * @param {() => Promise<void>} work
+ * @returns {Promise<void>}
+ */
+async function runAssistAction(button, label, work) {
+    if (assistRunning) {
+        return;
+    }
+
+    // Claimed before the first await: two quick clicks would otherwise both be
+    // past the guard while the generation check was still pending.
+    assistRunning = true;
+
+    const icon = button?.querySelector('i');
+    const iconClass = icon?.className ?? '';
+
+    button?.classList.add('gr-footer-action-busy');
+
+    if (icon) {
+        icon.className = 'fa-solid fa-spinner fa-spin fa-fw';
+    }
+
+    try {
+        try {
+            await waitUntilCondition(() => !isGenerating(), 10000, 100);
+        } catch {
+            toastr.warning(t`Cannot run while a reply is being generated.`);
+            return;
+        }
+
+        await work();
+    } catch (error) {
+        console.error(`[SideStage] ${label} failed`, error);
+        toastr.error(error?.message ?? String(error), label);
+    } finally {
+        assistRunning = false;
+        button?.classList.remove('gr-footer-action-busy');
+
+        if (icon) {
+            icon.className = iconClass;
+        }
+    }
+}
+
+/**
+ * Corrects the perspective of the latest character reply, and only that reply:
+ * the passage goes up on its own, with no chat history behind it, because
+ * whose pronouns are whose is answerable from the passage alone.
+ * @returns {Promise<void>}
+ */
+async function runPerspective() {
+    const messageId = getLatestCharacterMessageId();
+
+    if (messageId === -1) {
+        toastr.info(t`No character reply to work on yet.`);
+        return;
+    }
+
+    const message = chat[messageId];
+    const original = message.mes;
+    const { masked, extras } = maskMacros(original);
+    const systemPrompt = substituteParams(PERSPECTIVE_PROMPT, {
+        name1Override: name1,
+        name2Override: message.name,
+    });
+
+    const result = await runAssistRequest([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Rewrite this passage.\n\n${masked}` },
+    ], assistBudget(masked));
+
+    const rewritten = stripSpeakerPrefix(unmaskMacros(result, extras), message.name);
+
+    if (!rewritten) {
+        throw new Error(t`The model returned nothing.`);
+    }
+
+    if (rewritten.length < original.length * ASSIST_MIN_LENGTH_RATIO) {
+        const percent = Math.round((rewritten.length / original.length) * 100);
+        throw new Error(t`Result is only ${percent}% of the original length — likely truncated. Discarded.`);
+    }
+
+    if (rewritten === original) {
+        toastr.info(t`Already in the right perspective.`);
+        return;
+    }
+
+    await replaceMessageText(messageId, rewritten);
+    toastr.success(t`Perspective corrected.`);
+}
+
+/**
+ * Rewrites the latest character reply to follow whatever is typed in the
+ * message box. The whole chat goes up with it, so the rewrite can honour an
+ * instruction that only makes sense in light of the scene so far.
+ * @returns {Promise<void>}
+ */
+async function runDirective() {
+    const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
+    const typed = String(textarea?.value ?? '');
+    const directive = typed.trim();
+
+    if (!directive) {
+        toastr.info(t`Type the directive in the message box first.`);
+        return;
+    }
+
+    const messageId = getLatestCharacterMessageId();
+
+    if (messageId === -1) {
+        toastr.info(t`No character reply to work on yet.`);
+        return;
+    }
+
+    const message = chat[messageId];
+    // The target is the last turn of the history rather than a block quoted
+    // again underneath it: the model rewrites the reply where it stands, with
+    // everything that led to it already in front of it.
+    const result = await runAssistRequest([
+        { role: 'system', content: DIRECTIVE_PROMPT },
+        ...buildChatMessages(messageId),
+        {
+            role: 'user',
+            content: `${directive}\n\nRewrite ${message.name}'s reply — the last one above — to follow that. Output only the rewritten reply.`,
+        },
+    ], assistBudget(message.mes));
+
+    const rewritten = stripSpeakerPrefix(result, message.name);
+
+    if (!rewritten) {
+        throw new Error(t`The model returned nothing.`);
+    }
+
+    await replaceMessageText(messageId, rewritten);
+
+    // Only the directive that was actually used is cleared; anything typed
+    // while the request was in flight is somebody's next message, not spent.
+    if (textarea.value === typed) {
+        textarea.value = '';
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    toastr.success(t`Reply rewritten.`);
+}
+
+/**
+ * Copy-edits what is in the message box, in place. Nothing is sent to the chat
+ * and no history goes up with it — it is the text on its own.
+ * @returns {Promise<void>}
+ */
+async function runSpellCheck() {
+    const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
+    const original = String(textarea?.value ?? '');
+
+    if (!original.trim()) {
+        toastr.info(t`Type something in the message box first.`);
+        return;
+    }
+
+    const { masked, extras } = maskMacros(original);
+    const result = await runAssistRequest([
+        { role: 'system', content: SPELLCHECK_PROMPT },
+        { role: 'user', content: masked },
+    ], assistBudget(masked));
+
+    const corrected = unmaskMacros(result, extras);
+
+    if (!corrected) {
+        throw new Error(t`The model returned nothing.`);
+    }
+
+    if (corrected.length < original.trim().length * ASSIST_MIN_LENGTH_RATIO) {
+        throw new Error(t`Result is much shorter than what you typed — likely truncated. Discarded.`);
+    }
+
+    // Kept out of the way of anything typed since: overwriting a message the
+    // user has moved on to writing would cost more than the correction is worth.
+    if (textarea.value !== original) {
+        toastr.warning(t`The message box changed while the check was running, so it was left alone.`);
+        return;
+    }
+
+    if (corrected === original.trim()) {
+        toastr.info(t`Nothing to correct.`);
+        return;
+    }
+
+    textarea.value = corrected;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    toastr.success(t`Message copy-edited.`);
+}
+
+// #endregion
+
 // #region Roster panel
 
 function isPanelOpen() {
@@ -1099,6 +1599,23 @@ function openPanel() {
             <div class="gr-body">
                 <div id="groupRosterList" class="gr-grid"></div>
             </div>
+            <div class="gr-footer gr-footer-actions">
+                <div id="groupRosterPerspective" class="gr-footer-btn gr-footer-action"
+                     title="${t`Correct the perspective of the latest character reply`}">
+                    <i class="fa-solid fa-user-pen fa-fw"></i>
+                    <span>${t`Perspective`}</span>
+                </div>
+                <div id="groupRosterDirective" class="gr-footer-btn gr-footer-action"
+                     title="${t`Rewrite the latest character reply, following what you have typed in the message box`}">
+                    <i class="fa-solid fa-wand-magic-sparkles fa-fw"></i>
+                    <span>${t`Directive`}</span>
+                </div>
+                <div id="groupRosterSpellCheck" class="gr-footer-btn gr-footer-action"
+                     title="${t`Copy-edit what you have typed in the message box`}">
+                    <i class="fa-solid fa-spell-check fa-fw"></i>
+                    <span>${t`Spell check`}</span>
+                </div>
+            </div>
             <div class="gr-footer">
                 <label id="groupRosterNoteToggle" class="gr-footer-btn gr-footer-toggle"
                        title="${t`Fill this chat's Author's Note with this group's note`}">
@@ -1113,6 +1630,16 @@ function openPanel() {
 
     $('body').append(html);
     const $win = $(`#${PANEL_ID}`);
+
+    for (const [id, label, action] of [
+        ['#groupRosterPerspective', t`Perspective`, runPerspective],
+        ['#groupRosterDirective', t`Directive`, runDirective],
+        ['#groupRosterSpellCheck', t`Spell check`, runSpellCheck],
+    ]) {
+        $win.find(id).on('click', function () {
+            runAssistAction(this, label, action);
+        });
+    }
 
     $win.find('#groupRosterNoteToggle input').on('change', function () {
         setNoteApplied(this.checked);
@@ -1200,6 +1727,22 @@ const settingsHtml = `
                               placeholder="Overrides the group's note while this layout is selected"></textarea>
                     <div id="gr_layout_cards" class="gr-layout-grid"></div>
                 </div>
+            </div>
+
+            <div class="ss-settings-divider"></div>
+
+            <div class="ss-settings-section">
+                <div class="ss-settings-heading">Rewrite</div>
+                <label for="ss_assist_profile">Connection profile</label>
+                <select id="ss_assist_profile" class="text_pole"></select>
+                <small class="ss-settings-note">
+                    Runs the panel's <b>Perspective</b>, <b>Directive</b> and
+                    <b>Spell check</b> buttons. Each is a separate one-shot request,
+                    so none of them rebuild or re-send the chat's own prompt. A
+                    profile with reasoning off and a low temperature gives the most
+                    faithful rewrites.
+                </small>
+                <small id="ss_assist_profile_note" class="ss-settings-warn"></small>
             </div>
 
             <div class="ss-settings-divider"></div>
@@ -1695,6 +2238,47 @@ function renderRosterLists() {
     }
 }
 
+/**
+ * Fills the connection-profile dropdown. A saved profile that has since been
+ * renamed or deleted keeps its place in the list, marked, so choosing something
+ * else in the drawer is what clears the setting rather than merely opening it.
+ */
+function renderAssistProfileSelect() {
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('ss_assist_profile'));
+
+    if (!select) {
+        return;
+    }
+
+    const saved = getSettings().assistProfile ?? '';
+    const profiles = listAssistProfiles();
+    const missing = Boolean(saved) && !profiles.some(x => x.name === saved);
+
+    select.innerHTML = '';
+
+    const active = document.createElement('option');
+    active.value = '';
+    active.textContent = t`Active connection (whatever is selected)`;
+    select.appendChild(active);
+
+    for (const name of [...profiles.map(x => x.name), ...(missing ? [saved] : [])]) {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = missing && name === saved ? t`${name} (missing)` : name;
+        select.appendChild(option);
+    }
+
+    select.value = saved;
+
+    const note = document.getElementById('ss_assist_profile_note');
+
+    if (note) {
+        note.textContent = missing
+            ? t`"${saved}" no longer exists — the buttons will use the active connection.`
+            : profiles.length ? '' : t`No connection profiles found. Create one in the Connection Manager.`;
+    }
+}
+
 function renderSettings() {
     renderGroupSelect();
     renderLegacyImport();
@@ -1704,10 +2288,19 @@ function renderSettings() {
     $('#gr_roster_note').val(getSettingsRoster()?.note ?? '').prop('disabled', !getSettingsRoster());
     $('#gr_layout_note').val(getSettingsLayout()?.note ?? '');
     $('#gr_layout_narrator').val(getSettingsLayout()?.narrator ?? '');
+    renderAssistProfileSelect();
 }
 
 function addSettings() {
     $('#extensions_settings2').append(settingsHtml);
+
+    $('#ss_assist_profile').on('change', function () {
+        getSettings().assistProfile = String($(this).val());
+        saveSettingsDebounced();
+        // Repaint so a profile that had gone missing drops out of the list once
+        // something that exists has been chosen in its place.
+        renderAssistProfileSelect();
+    });
 
     $('#gr_group_select').on('change', function () {
         settingsGroupId = String($(this).val());
