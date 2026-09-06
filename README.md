@@ -42,6 +42,34 @@ start a new chat with that group.
 > group greetings can still greet — it just falls through to whatever ST would
 > have picked.
 
+### Rewrite
+
+Three buttons in the panel footer, above the Author's Note toggle. Each is a
+one-shot request of its own rather than a trip through the chat's own
+generation, so none of them rebuild or re-send the prompt your conversation is
+built on: a rewrite costs one small call and leaves the chat where it was.
+
+- **Perspective**: Rewrites the latest character reply into one consistent
+  narrative perspective — everyone in third person, you in second — and changes
+  nothing else. Spoken dialogue is left exactly as it is. Only that passage is
+  sent, with no chat history behind it: whose pronouns are whose is answerable
+  from the passage alone.
+- **Directive**: Rewrites the latest character reply to follow whatever you have
+  typed in the message box. The chat goes up with it, so an instruction that
+  only makes sense in light of the scene still lands. The box is cleared once
+  the rewrite is applied.
+- **Spell check**: Copy-edits what you have typed, in place. Typos, punctuation
+  and clear grammar errors; your word choice, tone and line breaks are left
+  alone, as are dialect, fragments, invented names and roleplay formatting.
+  Nothing is sent to the chat, and `{{macros}}` come back intact.
+- **Which AI**: A connection profile chosen in the settings drawer. Leave it on
+  the active connection to use whatever is already selected, or point it at
+  something small and cheap to keep rewrites off the model running the scene.
+- **Watch it arrive**: With a profile set, a rewrite streams in as it is
+  written — into the message for the first two, into the message box for the
+  spell check. Nothing is saved until the whole reply is in, and a result that
+  fails its checks puts the original back.
+
 ### Images
 
 - **Auto-Open Viewer**: When a character is selected, the frameless viewer appears showing the first image. Can be turned off in settings.
@@ -67,11 +95,15 @@ start a new chat with that group.
 - **Open the roster**: Wand menu → **SideStage**, or let it open itself when you enter a group chat.
 - **Pick a layout**: The dropdown in the panel footer. It reshapes the cast straight away, and reopens the scene the same way on every new chat.
 - **Build a layout**: Extensions panel → **SideStage** → *Greeting layouts*. Add one, then set each card's *In scene*, *Greets* and *Greeting*, and drag the rows into the order you want the scene to open in.
+- **Rewrite a reply**: The three buttons in the panel footer. Which AI they run
+  on is set in Extensions panel → **SideStage** → *Rewrite*; **Directive** reads
+  the message box, so type the instruction there first.
 - **Open the gallery**: The gallery button in the viewer's overlay controls.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
-- **Settings**: Extensions panel → **SideStage**. One drawer, three sections:
+- **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
   - *Roster* — choose which group you're editing; edit its Author's Note; add and remove cards.
   - *Greeting layouts* — add, rename and delete layouts; set the narrator, the note override, and the per-card matrix.
+  - *Rewrite* — the connection profile the footer's three buttons run on.
   - *Images* — *Open the viewer automatically on character select* and *Change with Greeting*.
 
 ## 🔒 Privacy
