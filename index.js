@@ -25,6 +25,8 @@ import {
     chat_metadata,
     addOneMessage,
     updateMessageBlock,
+    messageFormatting,
+    scrollChatToBottom,
     substituteParams,
     generateRaw,
     name1,
@@ -1021,6 +1023,18 @@ function cleanAssistOutput(raw) {
     return (fence ? fence[1] : out).trim();
 }
 
+/**
+ * Mid-stream cleanup, deliberately lighter than the final pass: the closing tag
+ * of a reasoning block may simply not have arrived yet, so an unterminated one
+ * is dropped along with the closed ones rather than shown as markup.
+ */
+function previewAssistOutput(text) {
+    return String(text ?? '')
+        .replace(/<(think|thinking|reasoning)>[\s\S]*?(?:<\/\1>|$)/gi, '')
+        .replace(/^\s*```[^\n]*\n?/, '')
+        .trimStart();
+}
+
 /** Models echo the speaker label they were shown; the message already has one. */
 function stripSpeakerPrefix(text, name) {
     const escaped = String(name ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1031,11 +1045,16 @@ function stripSpeakerPrefix(text, name) {
 
 /**
  * Runs one chat-shaped request and returns the cleaned reply.
+ *
+ * Passing onProgress asks for a streamed response, and is only honoured on a
+ * connection profile: generateRaw has no streaming path, so the fallback fills
+ * its target in one go when the whole reply lands.
  * @param {{role: string, content: string}[]} messages
  * @param {number} maxTokens
+ * @param {((text: string) => void)|null} [onProgress] Called with the reply so far
  * @returns {Promise<string>}
  */
-async function runAssistRequest(messages, maxTokens) {
+async function runAssistRequest(messages, maxTokens, onProgress = null) {
     const profile = getAssistProfile();
 
     if (profile) {
@@ -1050,9 +1069,24 @@ async function runAssistRequest(messages, maxTokens) {
         const overrides = isTextCompletion
             ? { include_reasoning: false }
             : { include_reasoning: false, reasoning_effort: 'min' };
-        const result = await service.sendRequest(profile.id, prompt, maxTokens, undefined, overrides);
+        const stream = Boolean(onProgress);
+        const result = await service.sendRequest(profile.id, prompt, maxTokens, { stream }, overrides);
 
-        return cleanAssistOutput(result?.content ?? result);
+        if (!stream) {
+            return cleanAssistOutput(result?.content ?? result);
+        }
+
+        // Streaming hands back a generator factory rather than the text, and
+        // each chunk carries the whole reply so far rather than just the part
+        // that is new.
+        let text = '';
+
+        for await (const chunk of result()) {
+            text = chunk?.text ?? text;
+            onProgress(previewAssistOutput(text));
+        }
+
+        return cleanAssistOutput(text);
     }
 
     // No profile: the connection that is already selected. createRawPrompt puts
@@ -1112,6 +1146,44 @@ async function replaceMessageText(messageId, text) {
 
     updateMessageBlock(messageId, message);
     await saveChatConditional();
+}
+
+/**
+ * Paints a streaming rewrite into a message as it arrives, and can put the
+ * message back the way it looked when the result turns out to be unusable —
+ * by then a partial rewrite is already on screen over it.
+ * @param {number} messageId
+ * @returns {{onProgress: ((text: string) => void)|null, restore: () => void}}
+ */
+function streamIntoMessage(messageId) {
+    const message = chat[messageId];
+    const dom = document.querySelector(`#chat .mes[mesid="${messageId}"] .mes_text`);
+
+    if (!dom) {
+        return { onProgress: null, restore: () => { } };
+    }
+
+    const original = dom.innerHTML;
+    const chatDom = document.getElementById('chat');
+    // Follow the text down only for someone already sitting at the bottom.
+    // Yanking back a reader who had scrolled up costs more than a rewrite
+    // growing off the end of the screen.
+    const follow = chatDom
+        ? chatDom.scrollHeight - chatDom.scrollTop - chatDom.clientHeight < 40
+        : false;
+
+    return {
+        onProgress: (text) => {
+            dom.innerHTML = messageFormatting(text, message.name, message.is_system, message.is_user, messageId);
+
+            if (follow) {
+                scrollChatToBottom();
+            }
+        },
+        restore: () => {
+            dom.innerHTML = original;
+        },
+    };
 }
 
 /**
@@ -1215,29 +1287,41 @@ async function runPerspective() {
         name2Override: message.name,
     });
 
-    const result = await runAssistRequest([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Rewrite this passage.\n\n${masked}` },
-    ], assistBudget(masked));
+    const { onProgress, restore } = streamIntoMessage(messageId);
+    let restoreNeeded = true;
 
-    const rewritten = stripSpeakerPrefix(unmaskMacros(result, extras), message.name);
+    try {
+        const result = await runAssistRequest([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Rewrite this passage.\n\n${masked}` },
+        ], assistBudget(masked), onProgress);
 
-    if (!rewritten) {
-        throw new Error(t`The model returned nothing.`);
+        const rewritten = stripSpeakerPrefix(unmaskMacros(result, extras), message.name);
+
+        if (!rewritten) {
+            throw new Error(t`The model returned nothing.`);
+        }
+
+        if (rewritten.length < original.length * ASSIST_MIN_LENGTH_RATIO) {
+            const percent = Math.round((rewritten.length / original.length) * 100);
+            throw new Error(t`Result is only ${percent}% of the original length — likely truncated. Discarded.`);
+        }
+
+        if (rewritten === original) {
+            toastr.info(t`Already in the right perspective.`);
+            return;
+        }
+
+        await replaceMessageText(messageId, rewritten);
+        restoreNeeded = false;
+        toastr.success(t`Perspective corrected.`);
+    } finally {
+        // Anything short of a saved rewrite puts the message back: the stream
+        // has already painted a partial one over the top of it.
+        if (restoreNeeded) {
+            restore();
+        }
     }
-
-    if (rewritten.length < original.length * ASSIST_MIN_LENGTH_RATIO) {
-        const percent = Math.round((rewritten.length / original.length) * 100);
-        throw new Error(t`Result is only ${percent}% of the original length — likely truncated. Discarded.`);
-    }
-
-    if (rewritten === original) {
-        toastr.info(t`Already in the right perspective.`);
-        return;
-    }
-
-    await replaceMessageText(messageId, rewritten);
-    toastr.success(t`Perspective corrected.`);
 }
 
 /**
@@ -1267,31 +1351,41 @@ async function runDirective() {
     // The target is the last turn of the history rather than a block quoted
     // again underneath it: the model rewrites the reply where it stands, with
     // everything that led to it already in front of it.
-    const result = await runAssistRequest([
-        { role: 'system', content: DIRECTIVE_PROMPT },
-        ...buildChatMessages(messageId),
-        {
-            role: 'user',
-            content: `${directive}\n\nRewrite ${message.name}'s reply — the last one above — to follow that. Output only the rewritten reply.`,
-        },
-    ], assistBudget(message.mes));
+    const { onProgress, restore } = streamIntoMessage(messageId);
+    let restoreNeeded = true;
 
-    const rewritten = stripSpeakerPrefix(result, message.name);
+    try {
+        const result = await runAssistRequest([
+            { role: 'system', content: DIRECTIVE_PROMPT },
+            ...buildChatMessages(messageId),
+            {
+                role: 'user',
+                content: `${directive}\n\nRewrite ${message.name}'s reply — the last one above — to follow that. Output only the rewritten reply.`,
+            },
+        ], assistBudget(message.mes), onProgress);
 
-    if (!rewritten) {
-        throw new Error(t`The model returned nothing.`);
+        const rewritten = stripSpeakerPrefix(result, message.name);
+
+        if (!rewritten) {
+            throw new Error(t`The model returned nothing.`);
+        }
+
+        await replaceMessageText(messageId, rewritten);
+        restoreNeeded = false;
+
+        // Only the directive that was actually used is cleared; anything typed
+        // while the request was in flight is somebody's next message, not spent.
+        if (textarea.value === typed) {
+            textarea.value = '';
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        toastr.success(t`Reply rewritten.`);
+    } finally {
+        if (restoreNeeded) {
+            restore();
+        }
     }
-
-    await replaceMessageText(messageId, rewritten);
-
-    // Only the directive that was actually used is cleared; anything typed
-    // while the request was in flight is somebody's next message, not spent.
-    if (textarea.value === typed) {
-        textarea.value = '';
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-
-    toastr.success(t`Reply rewritten.`);
 }
 
 /**
@@ -1309,36 +1403,61 @@ async function runSpellCheck() {
     }
 
     const { masked, extras } = maskMacros(original);
-    const result = await runAssistRequest([
-        { role: 'system', content: SPELLCHECK_PROMPT },
-        { role: 'user', content: masked },
-    ], assistBudget(masked));
 
-    const corrected = unmaskMacros(result, extras);
+    const write = (text) => {
+        textarea.value = text;
+        // The input event is what keeps ST's autosize and its draft in step.
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    };
 
-    if (!corrected) {
-        throw new Error(t`The model returned nothing.`);
+    // A streamed check writes over the box as it goes; a run with no profile
+    // behind it leaves the box alone until the whole reply lands, which is the
+    // only case where the user can still be typing into it.
+    let streamed = false;
+    const onProgress = (text) => {
+        streamed = true;
+        write(text);
+    };
+
+    let restoreNeeded = true;
+
+    try {
+        const result = await runAssistRequest([
+            { role: 'system', content: SPELLCHECK_PROMPT },
+            { role: 'user', content: masked },
+        ], assistBudget(masked), onProgress);
+
+        const corrected = unmaskMacros(result, extras);
+
+        if (!corrected) {
+            throw new Error(t`The model returned nothing.`);
+        }
+
+        if (corrected.length < original.trim().length * ASSIST_MIN_LENGTH_RATIO) {
+            throw new Error(t`Result is much shorter than what you typed — likely truncated. Discarded.`);
+        }
+
+        if (!streamed && textarea.value !== original) {
+            // Overwriting a message the user has moved on to writing would cost
+            // more than the correction is worth, and so would restoring it.
+            restoreNeeded = false;
+            toastr.warning(t`The message box changed while the check was running, so it was left alone.`);
+            return;
+        }
+
+        if (corrected === original.trim()) {
+            toastr.info(t`Nothing to correct.`);
+            return;
+        }
+
+        write(corrected);
+        restoreNeeded = false;
+        toastr.success(t`Message copy-edited.`);
+    } finally {
+        if (restoreNeeded) {
+            write(original);
+        }
     }
-
-    if (corrected.length < original.trim().length * ASSIST_MIN_LENGTH_RATIO) {
-        throw new Error(t`Result is much shorter than what you typed — likely truncated. Discarded.`);
-    }
-
-    // Kept out of the way of anything typed since: overwriting a message the
-    // user has moved on to writing would cost more than the correction is worth.
-    if (textarea.value !== original) {
-        toastr.warning(t`The message box changed while the check was running, so it was left alone.`);
-        return;
-    }
-
-    if (corrected === original.trim()) {
-        toastr.info(t`Nothing to correct.`);
-        return;
-    }
-
-    textarea.value = corrected;
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    toastr.success(t`Message copy-edited.`);
 }
 
 // #endregion
@@ -1740,7 +1859,8 @@ const settingsHtml = `
                     <b>Spell check</b> buttons. Each is a separate one-shot request,
                     so none of them rebuild or re-send the chat's own prompt. A
                     profile with reasoning off and a low temperature gives the most
-                    faithful rewrites.
+                    faithful rewrites, and a rewrite only streams in as it is written
+                    when a profile is set — with none, it arrives all at once.
                 </small>
                 <small id="ss_assist_profile_note" class="ss-settings-warn"></small>
             </div>
