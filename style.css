@@ -224,14 +224,16 @@ body.waifuMode .zoomed_avatar {
     outline-offset: 2px;
 }
 
-/* The rewrite row, above the note and layout row. Three equal widths, so it
-   reads as a toolbar rather than as three differently weighted buttons. */
+/* Sized like Quick Reply's own buttons (#qr--bar .qr--button): a compact
+   bordered pill sized to its label, not stretched to fill an equal share of
+   the row. */
 .gr-footer-action {
-    flex: 1 1 0;
-    min-width: 0;
+    flex: 0 0 auto;
     gap: 5px;
-    padding: 4px 6px;
-    font-size: calc(var(--mainFontSize) * 0.8);
+    padding: 3px 5px;
+    margin: 3px 0;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
 }
 
 .gr-footer-action i {
@@ -253,6 +255,24 @@ body.waifuMode .zoomed_avatar {
 
 .gr-footer-actions:has(.gr-footer-action-busy) .gr-footer-action:not(.gr-footer-action-busy) {
     opacity: 0.4;
+}
+
+/* Docked above the message box instead of in the panel footer, in the same
+   #send_form slot Quick Reply's own bar uses: width:100% forces it onto its
+   own row inside #send_form's flex-wrap, and `order` keeps that row above the
+   textarea row (order 25) while sitting below Quick Reply's bar (order 1) if
+   that extension is also enabled. */
+#sidestageAssistBar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    order: 2;
+    padding: 4px 6px;
 }
 
 .gr-status {
@@ -797,6 +817,20 @@ body.waifuMode .zoomed_avatar {
 
 .ss-settings-toggles .checkbox_label {
     flex: 0 1 auto;
+    margin: 0;
+}
+
+/* One prompt-manager entry per line: names can run long (custom user
+   prompts especially), so wrapping them like the Images toggles would blur
+   together which word belongs to which checkbox. */
+.ss-ooc-prompts {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.ss-ooc-prompts .checkbox_label {
     margin: 0;
 }
 

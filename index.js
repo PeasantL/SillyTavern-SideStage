@@ -37,6 +37,8 @@ import {
     saveChatConditional,
 } from '../../../../script.js';
 import { getMessageTimeStamp } from '../../../RossAscends-mods.js';
+import { hideChatMessageRange } from '../../../chats.js';
+import { promptManager } from '../../../openai.js';
 import { parseReasoningFromString } from '../../../reasoning.js';
 import { extension_settings } from '../../../extensions.js';
 import {
@@ -110,6 +112,21 @@ const rosterDefaults = {
      * @type {string}
      */
     assistProfile: '',
+    /**
+     * How much chat history goes into the OOC / Morality / Scene requests:
+     * 'full' (the whole chat), 'last' (just the exchange being asked about),
+     * or 'none' (the question alone).
+     * @type {'full'|'last'|'none'}
+     */
+    oocHistory: 'full',
+    /**
+     * Identifiers of Chat Completion Prompt Manager entries (Main, Jailbreak,
+     * NSFW, character description, ...) to send with every OOC / Morality /
+     * Scene request, regardless of whether each is currently on in the active
+     * preset. Empty means none — just the question and its history.
+     * @type {string[]}
+     */
+    oocPrompts: [],
 };
 
 /**
@@ -977,6 +994,50 @@ function getAssistProfile() {
 }
 
 /**
+ * Chat Completion Prompt Manager entries the OOC settings picker can offer:
+ * whatever is in the active preset's prompt order for the current character,
+ * minus markers (World Info, chat history, dialogue examples, ...) since
+ * those are positions to inject other things into rather than static text.
+ * Empty outside Chat Completion, or before the prompt manager has loaded.
+ * @returns {{identifier: string, name: string}[]}
+ */
+function listOocPromptOptions() {
+    try {
+        return promptManager
+            .getPromptsForCharacter(promptManager.activeCharacter)
+            .filter(prompt => prompt && !prompt.marker)
+            .map(prompt => ({ identifier: prompt.identifier, name: prompt.name || prompt.identifier }));
+    } catch (error) {
+        console.warn('[SideStage] Could not list Chat Completion prompts', error);
+        return [];
+    }
+}
+
+/**
+ * The content of every prompt the "OOC prompts" setting has selected, still
+ * available in the active preset, in that preset's own order.
+ * @returns {{role: string, content: string}[]}
+ */
+function getSelectedOocPromptMessages() {
+    const selected = new Set(getSettings().oocPrompts ?? []);
+
+    if (!selected.size) {
+        return [];
+    }
+
+    try {
+        return promptManager
+            .getPromptsForCharacter(promptManager.activeCharacter)
+            .filter(prompt => prompt && !prompt.marker && selected.has(prompt.identifier))
+            .map(prompt => ({ role: prompt.role || 'system', content: substituteParams(String(prompt.content ?? '')) }))
+            .filter(message => message.content.trim());
+    } catch (error) {
+        console.warn('[SideStage] Could not build selected Chat Completion prompts', error);
+        return [];
+    }
+}
+
+/**
  * Hides {{macros}} behind inert tokens.
  *
  * Every path to a model runs substituteParams over what it sends, so an
@@ -1460,6 +1521,205 @@ async function runSpellCheck() {
     }
 }
 
+/**
+ * The OOC / Morality / Scene buttons: a real turn, not a rewrite. An
+ * ((OOC: ...)) line goes into the chat as a user message the normal way, and
+ * whoever is currently speaking answers it out of character — but the answer
+ * is still a one-shot request like the rewrite actions, not a Generate() call,
+ * so it never touches World Info, Author's Note, persona or the jailbreak: the
+ * only context it gets is whatever buildOocMessages() below decides to send.
+ */
+
+const OOC_REPLY_PROMPT = [
+    'You are {{char}}, in an ongoing roleplay chat with {{user}}. You have just',
+    'been asked an out-of-character (OOC) question, and you are answering as',
+    'yourself — the person behind the character — not staying in character for',
+    'the roleplay.',
+    '',
+    'Rules you must follow exactly:',
+    '- Answer only the OOC request, plainly and directly.',
+    '- Do not continue the roleplay scene, write the next in-character turn, or',
+    '  speak for {{user}} or anyone else.',
+    '- Wrap your whole reply in ((OOC: ...)), the same way the request was.',
+    '- No preamble, and no roleplay formatting like *asterisks* in the OOC reply.',
+].join('\n');
+
+const OOC_MAX_TOKENS = 1024;
+
+/**
+ * How much chat history goes into an OOC request, per the "History sent with
+ * OOC" setting: the whole chat, just the exchange being asked about, or the
+ * question alone.
+ * @param {number} speakerMessageId The character reply OOC is asking about
+ * @param {number} askMessageId The OOC ask itself, already appended to `chat`
+ * @returns {{role: string, content: string}[]}
+ */
+function buildOocMessages(speakerMessageId, askMessageId) {
+    switch (getSettings().oocHistory) {
+        case 'none':
+            return buildChatMessages(askMessageId).slice(-1);
+        case 'last':
+            return [
+                ...buildChatMessages(speakerMessageId).slice(-1),
+                ...buildChatMessages(askMessageId).slice(-1),
+            ];
+        default:
+            return buildChatMessages(askMessageId);
+    }
+}
+
+/**
+ * Posts an OOC line as a real user turn, then asks whoever last spoke to
+ * answer it out of character. Both land in the chat log the normal way.
+ * @param {string} oocLine
+ * @returns {Promise<void>}
+ */
+async function runOocTurn(oocLine) {
+    const speakerMessageId = getLatestCharacterMessageId();
+
+    if (speakerMessageId === -1) {
+        toastr.info(t`No character to answer yet.`);
+        return;
+    }
+
+    const speaker = chat[speakerMessageId];
+
+    await sendMessageAsUser(oocLine, extractMessageBias(oocLine));
+    const askMessageId = chat.length - 1;
+
+    const systemPrompt = substituteParams(OOC_REPLY_PROMPT, {
+        name1Override: name1,
+        name2Override: speaker.name,
+    });
+
+    // The reply's bubble goes up empty and streams in, the same as a real
+    // character turn — so it needs to exist in `chat` before the request even
+    // starts, and comes back out again if the request fails or returns
+    // nothing, since nothing has been announced to other extensions yet.
+    const reply = {
+        is_user: false,
+        is_system: false,
+        name: speaker.name,
+        send_date: getMessageTimeStamp(),
+        original_avatar: speaker.original_avatar,
+        force_avatar: speaker.force_avatar,
+        extra: { gen_id: Date.now() * Math.random() * 1000000 },
+        mes: '',
+    };
+
+    chat.push(reply);
+    const replyMessageId = chat.length - 1;
+    addOneMessage(reply);
+
+    const { onProgress } = streamIntoMessage(replyMessageId);
+
+    try {
+        const result = await runAssistRequest([
+            { role: 'system', content: systemPrompt },
+            ...getSelectedOocPromptMessages(),
+            ...buildOocMessages(speakerMessageId, askMessageId),
+        ], OOC_MAX_TOKENS, onProgress);
+
+        if (!result?.trim()) {
+            throw new Error(t`The model returned nothing.`);
+        }
+
+        await replaceMessageText(replyMessageId, result);
+        await eventSource.emit(event_types.MESSAGE_RECEIVED, replyMessageId, 'normal');
+        await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, replyMessageId, 'normal');
+
+        // Both halves of the aside are ghosted — the same "Exclude message
+        // from prompts" state the mes_hide button sets — so the exchange
+        // stays visible but never bleeds into a later Generate() or the next
+        // OOC request's own history.
+        await hideChatMessageRange(askMessageId, replyMessageId, false);
+    } catch (error) {
+        chat.splice(replyMessageId, 1);
+        $(`#chat .mes[mesid="${replyMessageId}"]`).remove();
+        // The ask still happened and still gets ghosted on its own; only the
+        // reply that never arrived is rolled back.
+        await hideChatMessageRange(askMessageId, askMessageId, false);
+        throw error;
+    }
+}
+
+/**
+ * Wraps whatever is typed in the message box as an OOC question and sends it.
+ * @returns {Promise<void>}
+ */
+async function runOOC() {
+    const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
+    const input = String(textarea?.value ?? '').trim();
+
+    if (!input) {
+        toastr.info(t`Type your out-of-character question in the message box first.`);
+        return;
+    }
+
+    textarea.value = '';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+
+    await runOocTurn(`((OOC: Pause the roleplay and respond out of character: ${input}))`);
+}
+
+/** Asks about the evil of the current scene, out of character. */
+async function runMorality() {
+    await runOocTurn('((OOC: Pause the roleplay and respond out of character. Describe the evil of the current scene in detail.))');
+}
+
+/** Asks for a description of the current scene, out of character. */
+async function runScene() {
+    await runOocTurn('((OOC: Pause the roleplay and respond out of character. Describe the current scene in detail.))');
+}
+
+const ASSIST_BAR_ID = 'sidestageAssistBar';
+
+/**
+ * Docks the rewrite and OOC-turn actions above the message box, in the same
+ * #send_form slot the (optional) Quick Reply bar occupies — so they stay
+ * reachable without opening the SideStage panel, whether or not Quick Reply
+ * is enabled.
+ */
+function mountAssistBar() {
+    const sendForm = document.getElementById('send_form');
+    if (!sendForm || document.getElementById(ASSIST_BAR_ID)) {
+        return;
+    }
+
+    const bar = document.createElement('div');
+    bar.id = ASSIST_BAR_ID;
+    bar.classList.add('gr-footer-actions');
+
+    for (const [icon, label, title, action] of [
+        ['fa-user-pen', t`Perspective`, t`Correct the perspective of the latest character reply`, runPerspective],
+        ['fa-wand-magic-sparkles', t`Directive`, t`Rewrite the latest character reply, following what you have typed in the message box`, runDirective],
+        ['fa-spell-check', t`Spell check`, t`Copy-edit what you have typed in the message box`, runSpellCheck],
+        ['fa-comment-dots', t`OOC`, t`Send what you have typed in the message box as an out-of-character question`, runOOC],
+        ['fa-skull', t`Morality`, t`Ask, out of character, about the evil of the current scene`, runMorality],
+        ['fa-image', t`Scene`, t`Ask, out of character, for a description of the current scene`, runScene],
+    ]) {
+        const button = document.createElement('div');
+        button.classList.add('gr-footer-btn', 'gr-footer-action');
+        button.title = title;
+
+        const iconEl = document.createElement('i');
+        iconEl.classList.add('fa-solid', icon, 'fa-fw');
+
+        const span = document.createElement('span');
+        span.textContent = label;
+
+        button.append(iconEl, span);
+        button.addEventListener('click', () => runAssistAction(button, label, action));
+        bar.append(button);
+    }
+
+    if (sendForm.children.length > 0) {
+        sendForm.children[0].insertAdjacentElement('beforebegin', bar);
+    } else {
+        sendForm.append(bar);
+    }
+}
+
 // #endregion
 
 // #region Roster panel
@@ -1718,23 +1978,6 @@ function openPanel() {
             <div class="gr-body">
                 <div id="groupRosterList" class="gr-grid"></div>
             </div>
-            <div class="gr-footer gr-footer-actions">
-                <div id="groupRosterPerspective" class="gr-footer-btn gr-footer-action"
-                     title="${t`Correct the perspective of the latest character reply`}">
-                    <i class="fa-solid fa-user-pen fa-fw"></i>
-                    <span>${t`Perspective`}</span>
-                </div>
-                <div id="groupRosterDirective" class="gr-footer-btn gr-footer-action"
-                     title="${t`Rewrite the latest character reply, following what you have typed in the message box`}">
-                    <i class="fa-solid fa-wand-magic-sparkles fa-fw"></i>
-                    <span>${t`Directive`}</span>
-                </div>
-                <div id="groupRosterSpellCheck" class="gr-footer-btn gr-footer-action"
-                     title="${t`Copy-edit what you have typed in the message box`}">
-                    <i class="fa-solid fa-spell-check fa-fw"></i>
-                    <span>${t`Spell check`}</span>
-                </div>
-            </div>
             <div class="gr-footer">
                 <label id="groupRosterNoteToggle" class="gr-footer-btn gr-footer-toggle"
                        title="${t`Fill this chat's Author's Note with this group's note`}">
@@ -1749,16 +1992,6 @@ function openPanel() {
 
     $('body').append(html);
     const $win = $(`#${PANEL_ID}`);
-
-    for (const [id, label, action] of [
-        ['#groupRosterPerspective', t`Perspective`, runPerspective],
-        ['#groupRosterDirective', t`Directive`, runDirective],
-        ['#groupRosterSpellCheck', t`Spell check`, runSpellCheck],
-    ]) {
-        $win.find(id).on('click', function () {
-            runAssistAction(this, label, action);
-        });
-    }
 
     $win.find('#groupRosterNoteToggle input').on('change', function () {
         setNoteApplied(this.checked);
@@ -1855,14 +2088,41 @@ const settingsHtml = `
                 <label for="ss_assist_profile">Connection profile</label>
                 <select id="ss_assist_profile" class="text_pole"></select>
                 <small class="ss-settings-note">
-                    Runs the panel's <b>Perspective</b>, <b>Directive</b> and
-                    <b>Spell check</b> buttons. Each is a separate one-shot request,
-                    so none of them rebuild or re-send the chat's own prompt. A
-                    profile with reasoning off and a low temperature gives the most
-                    faithful rewrites, and a rewrite only streams in as it is written
-                    when a profile is set — with none, it arrives all at once.
+                    Runs the <b>Perspective</b>, <b>Directive</b>,
+                    <b>Spell check</b>, <b>OOC</b>, <b>Morality</b> and
+                    <b>Scene</b> buttons. Each is a separate one-shot request, so
+                    none of them rebuild or re-send the chat's own prompt —
+                    nothing from World Info, Author's Note, persona or the Chat
+                    Completion Prompt Manager goes with them except what the
+                    two controls below explicitly add. A profile with reasoning
+                    off and a low temperature gives the most faithful rewrites,
+                    and a rewrite only streams in as it is written when a
+                    profile is set — with none, it arrives all at once.
                 </small>
                 <small id="ss_assist_profile_note" class="ss-settings-warn"></small>
+                <label for="ss_ooc_history">History sent with OOC / Morality / Scene</label>
+                <select id="ss_ooc_history" class="text_pole">
+                    <option value="full">Full chat</option>
+                    <option value="last">Last exchange only</option>
+                    <option value="none">Just the question</option>
+                </select>
+                <small class="ss-settings-note">
+                    How much of the chat goes with the OOC request. <b>Full
+                    chat</b> is what the reply needs to describe the scene or
+                    answer about it accurately; the shorter options trade that
+                    off for a smaller, cheaper request and keep less of the
+                    aside itself out of the model's view.
+                </small>
+                <label>Chat Completion prompts sent with OOC / Morality / Scene</label>
+                <div id="ss_ooc_prompts" class="ss-ooc-prompts"></div>
+                <small class="ss-settings-note">
+                    Checked here independently of whether it's currently on in
+                    your preset — e.g. add <b>Jailbreak</b> so "describe the
+                    evil of the scene" doesn't get refused, without dragging in
+                    World Info or persona too. Leave everything unchecked for
+                    just the question and history above. Only has any effect on
+                    a Chat Completion connection; empty otherwise.
+                </small>
             </div>
 
             <div class="ss-settings-divider"></div>
@@ -2399,6 +2659,46 @@ function renderAssistProfileSelect() {
     }
 }
 
+/**
+ * Fills the OOC-prompts checkbox list from the active Chat Completion
+ * preset. A saved identifier no longer in that preset is dropped silently —
+ * there's nothing sensible to show for it, unlike a missing connection
+ * profile, which at least still has a name to display.
+ */
+function renderOocPromptPicker() {
+    const container = document.getElementById('ss_ooc_prompts');
+
+    if (!container) {
+        return;
+    }
+
+    const options = listOocPromptOptions();
+    const selected = new Set(getSettings().oocPrompts ?? []);
+
+    container.innerHTML = '';
+
+    if (!options.length) {
+        const empty = document.createElement('small');
+        empty.classList.add('ss-settings-warn');
+        empty.textContent = t`No Chat Completion prompts found. Switch to a Chat Completion connection to pick from its Prompt Manager.`;
+        container.appendChild(empty);
+        return;
+    }
+
+    for (const { identifier, name } of options) {
+        const label = document.createElement('label');
+        label.classList.add('checkbox_label');
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.dataset.identifier = identifier;
+        input.checked = selected.has(identifier);
+
+        label.append(input, document.createTextNode(name));
+        container.appendChild(label);
+    }
+}
+
 function renderSettings() {
     renderGroupSelect();
     renderLegacyImport();
@@ -2409,6 +2709,8 @@ function renderSettings() {
     $('#gr_layout_note').val(getSettingsLayout()?.note ?? '');
     $('#gr_layout_narrator').val(getSettingsLayout()?.narrator ?? '');
     renderAssistProfileSelect();
+    $('#ss_ooc_history').val(getSettings().oocHistory ?? 'full');
+    renderOocPromptPicker();
 }
 
 function addSettings() {
@@ -2420,6 +2722,25 @@ function addSettings() {
         // Repaint so a profile that had gone missing drops out of the list once
         // something that exists has been chosen in its place.
         renderAssistProfileSelect();
+    });
+
+    $('#ss_ooc_history').on('change', function () {
+        getSettings().oocHistory = String($(this).val());
+        saveSettingsDebounced();
+    });
+
+    $('#ss_ooc_prompts').on('change', 'input[type="checkbox"]', function () {
+        const identifier = String($(this).data('identifier'));
+        const oocPrompts = getSettings().oocPrompts ?? (getSettings().oocPrompts = []);
+        const index = oocPrompts.indexOf(identifier);
+
+        if (this.checked && index === -1) {
+            oocPrompts.push(identifier);
+        } else if (!this.checked && index !== -1) {
+            oocPrompts.splice(index, 1);
+        }
+
+        saveSettingsDebounced();
     });
 
     $('#gr_group_select').on('change', function () {
@@ -3543,6 +3864,7 @@ jQuery(async () => {
     loadImageSettings(getSTContext());
     addSettings();
     addWandButton();
+    mountAssistBar();
 
     eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
     eventSource.on(event_types.GROUP_CHAT_CREATED, openSceneFromLayout);
