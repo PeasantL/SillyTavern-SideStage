@@ -820,20 +820,6 @@ body.waifuMode .zoomed_avatar {
     margin: 0;
 }
 
-/* One prompt-manager entry per line: names can run long (custom user
-   prompts especially), so wrapping them like the Images toggles would blur
-   together which word belongs to which checkbox. */
-.ss-ooc-prompts {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-top: 4px;
-}
-
-.ss-ooc-prompts .checkbox_label {
-    margin: 0;
-}
-
 /* Rows are real elements so a whole one can be dragged, which means the five
    columns are held in line by widths shared between the header and every row
    rather than by a single grid. */

@@ -38,7 +38,6 @@ import {
 } from '../../../../script.js';
 import { getMessageTimeStamp } from '../../../RossAscends-mods.js';
 import { hideChatMessageRange } from '../../../chats.js';
-import { promptManager } from '../../../openai.js';
 import { parseReasoningFromString } from '../../../reasoning.js';
 import { extension_settings } from '../../../extensions.js';
 import {
@@ -119,14 +118,6 @@ const rosterDefaults = {
      * @type {'full'|'last'|'none'}
      */
     oocHistory: 'full',
-    /**
-     * Identifiers of Chat Completion Prompt Manager entries (Main, Jailbreak,
-     * NSFW, character description, ...) to send with every OOC / Morality /
-     * Scene request, regardless of whether each is currently on in the active
-     * preset. Empty means none — just the question and its history.
-     * @type {string[]}
-     */
-    oocPrompts: [],
 };
 
 /**
@@ -165,6 +156,9 @@ function getSettings() {
         delete settings.rosters;
         delete settings.activeRosterId;
     }
+
+    // The Chat Completion prompt picker is gone; drop what it saved.
+    delete settings.oocPrompts;
 
     for (const roster of Object.values(settings.groups)) {
         if (!Array.isArray(roster.cards)) {
@@ -994,50 +988,6 @@ function getAssistProfile() {
 }
 
 /**
- * Chat Completion Prompt Manager entries the OOC settings picker can offer:
- * whatever is in the active preset's prompt order for the current character,
- * minus markers (World Info, chat history, dialogue examples, ...) since
- * those are positions to inject other things into rather than static text.
- * Empty outside Chat Completion, or before the prompt manager has loaded.
- * @returns {{identifier: string, name: string}[]}
- */
-function listOocPromptOptions() {
-    try {
-        return promptManager
-            .getPromptsForCharacter(promptManager.activeCharacter)
-            .filter(prompt => prompt && !prompt.marker)
-            .map(prompt => ({ identifier: prompt.identifier, name: prompt.name || prompt.identifier }));
-    } catch (error) {
-        console.warn('[SideStage] Could not list Chat Completion prompts', error);
-        return [];
-    }
-}
-
-/**
- * The content of every prompt the "OOC prompts" setting has selected, still
- * available in the active preset, in that preset's own order.
- * @returns {{role: string, content: string}[]}
- */
-function getSelectedOocPromptMessages() {
-    const selected = new Set(getSettings().oocPrompts ?? []);
-
-    if (!selected.size) {
-        return [];
-    }
-
-    try {
-        return promptManager
-            .getPromptsForCharacter(promptManager.activeCharacter)
-            .filter(prompt => prompt && !prompt.marker && selected.has(prompt.identifier))
-            .map(prompt => ({ role: prompt.role || 'system', content: substituteParams(String(prompt.content ?? '')) }))
-            .filter(message => message.content.trim());
-    } catch (error) {
-        console.warn('[SideStage] Could not build selected Chat Completion prompts', error);
-        return [];
-    }
-}
-
-/**
  * Hides {{macros}} behind inert tokens.
  *
  * Every path to a model runs substituteParams over what it sends, so an
@@ -1616,7 +1566,6 @@ async function runOocTurn(oocLine) {
     try {
         const result = await runAssistRequest([
             { role: 'system', content: systemPrompt },
-            ...getSelectedOocPromptMessages(),
             ...buildOocMessages(speakerMessageId, askMessageId),
         ], OOC_MAX_TOKENS, onProgress);
 
@@ -2093,8 +2042,8 @@ const settingsHtml = `
                     <b>Scene</b> buttons. Each is a separate one-shot request, so
                     none of them rebuild or re-send the chat's own prompt —
                     nothing from World Info, Author's Note, persona or the Chat
-                    Completion Prompt Manager goes with them except what the
-                    two controls below explicitly add. A profile with reasoning
+                    Completion Prompt Manager goes with them except the history
+                    the control below adds. A profile with reasoning
                     off and a low temperature gives the most faithful rewrites,
                     and a rewrite only streams in as it is written when a
                     profile is set — with none, it arrives all at once.
@@ -2112,16 +2061,6 @@ const settingsHtml = `
                     answer about it accurately; the shorter options trade that
                     off for a smaller, cheaper request and keep less of the
                     aside itself out of the model's view.
-                </small>
-                <label>Chat Completion prompts sent with OOC / Morality / Scene</label>
-                <div id="ss_ooc_prompts" class="ss-ooc-prompts"></div>
-                <small class="ss-settings-note">
-                    Checked here independently of whether it's currently on in
-                    your preset — e.g. add <b>Jailbreak</b> so "describe the
-                    evil of the scene" doesn't get refused, without dragging in
-                    World Info or persona too. Leave everything unchecked for
-                    just the question and history above. Only has any effect on
-                    a Chat Completion connection; empty otherwise.
                 </small>
             </div>
 
@@ -2659,46 +2598,6 @@ function renderAssistProfileSelect() {
     }
 }
 
-/**
- * Fills the OOC-prompts checkbox list from the active Chat Completion
- * preset. A saved identifier no longer in that preset is dropped silently —
- * there's nothing sensible to show for it, unlike a missing connection
- * profile, which at least still has a name to display.
- */
-function renderOocPromptPicker() {
-    const container = document.getElementById('ss_ooc_prompts');
-
-    if (!container) {
-        return;
-    }
-
-    const options = listOocPromptOptions();
-    const selected = new Set(getSettings().oocPrompts ?? []);
-
-    container.innerHTML = '';
-
-    if (!options.length) {
-        const empty = document.createElement('small');
-        empty.classList.add('ss-settings-warn');
-        empty.textContent = t`No Chat Completion prompts found. Switch to a Chat Completion connection to pick from its Prompt Manager.`;
-        container.appendChild(empty);
-        return;
-    }
-
-    for (const { identifier, name } of options) {
-        const label = document.createElement('label');
-        label.classList.add('checkbox_label');
-
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.dataset.identifier = identifier;
-        input.checked = selected.has(identifier);
-
-        label.append(input, document.createTextNode(name));
-        container.appendChild(label);
-    }
-}
-
 function renderSettings() {
     renderGroupSelect();
     renderLegacyImport();
@@ -2710,7 +2609,6 @@ function renderSettings() {
     $('#gr_layout_narrator').val(getSettingsLayout()?.narrator ?? '');
     renderAssistProfileSelect();
     $('#ss_ooc_history').val(getSettings().oocHistory ?? 'full');
-    renderOocPromptPicker();
 }
 
 function addSettings() {
@@ -2726,20 +2624,6 @@ function addSettings() {
 
     $('#ss_ooc_history').on('change', function () {
         getSettings().oocHistory = String($(this).val());
-        saveSettingsDebounced();
-    });
-
-    $('#ss_ooc_prompts').on('change', 'input[type="checkbox"]', function () {
-        const identifier = String($(this).data('identifier'));
-        const oocPrompts = getSettings().oocPrompts ?? (getSettings().oocPrompts = []);
-        const index = oocPrompts.indexOf(identifier);
-
-        if (this.checked && index === -1) {
-            oocPrompts.push(identifier);
-        } else if (!this.checked && index !== -1) {
-            oocPrompts.splice(index, 1);
-        }
-
         saveSettingsDebounced();
     });
 
