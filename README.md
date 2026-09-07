@@ -16,7 +16,7 @@ settings drawer.
 - **A bench, not just the cast**: The roster is the wider pool of cards for that group; membership is the subset currently in the chat.
 - **One-click membership**: Toggle any roster card in or out of the open group chat.
 - **Force a turn**: Make a specific member speak next, bypassing the activation strategy. Anything typed in the message box is posted as your user turn first, so the forced reply answers it.
-- **Per-group Author's Note**: Each group carries a note; a footer toggle fills the chat's Author's Note with it and clears it again. A layout can override it for one scene.
+- **Per-group Author's Note**: Each group carries a note; a footer toggle fills the chat's Author's Note with it and clears it again. A layout can override it for one scene. The toggle is saved with the chat, so it comes back on after a refresh and follows the note if you edit it or switch layout; typing over the note by hand turns it off.
 - **Follows the chat**: Opens on group chats, closes elsewhere. The wand menu toggles it by hand.
 
 ### Greeting layouts

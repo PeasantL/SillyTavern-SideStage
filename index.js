@@ -39,7 +39,7 @@ import {
 import { getMessageTimeStamp } from '../../../RossAscends-mods.js';
 import { hideChatMessageRange } from '../../../chats.js';
 import { parseReasoningFromString } from '../../../reasoning.js';
-import { extension_settings } from '../../../extensions.js';
+import { extension_settings, saveMetadataDebounced } from '../../../extensions.js';
 import {
     groups,
     selected_group,
@@ -59,6 +59,10 @@ const MODULE_NAME = 'groupRoster';
 const PANEL_ID = 'groupRoster';
 /** Chat-scoped display name for narrator messages, set by ST's /sysname. */
 const NARRATOR_NAME_KEY = 'narrator_name';
+/** Where the Author's Note extension keeps the chat's note (its metadata_keys.prompt). */
+const NOTE_PROMPT_KEY = 'note_prompt';
+/** Chat-scoped state of the footer's Author's Note toggle. */
+const NOTE_APPLIED_KEY = 'sidestage_note_applied';
 /**
  * Avatar the viewer is pinned to, or null to follow whoever spoke last.
  * Deliberately not persisted: it is a way to look at one character for a
@@ -757,11 +761,21 @@ async function forceTurn(avatar) {
 
 /**
  * Reads the chat-scoped Author's Note.
+ * Straight from chat_metadata rather than the textarea, because the Author's
+ * Note extension fills that textarea from its own CHAT_CHANGED handler and
+ * there is no ordering guarantee against ours — read the field on a chat
+ * switch and it can still hold the previous chat's note.
  * @returns {string}
  */
 function getChatAuthorsNote() {
-    return String($('#extension_floating_prompt').val() ?? '');
+    return String(chat_metadata[NOTE_PROMPT_KEY] ?? '');
 }
+
+/**
+ * True while setChatAuthorsNote() is driving the field, so the input event it
+ * fires is not mistaken for the user typing in it.
+ */
+let applyingNote = false;
 
 /**
  * Writes the chat-scoped Author's Note.
@@ -779,8 +793,17 @@ function setChatAuthorsNote(text) {
         return false;
     }
 
-    field.value = text;
-    field.dispatchEvent(new Event('input', { bubbles: true }));
+    applyingNote = true;
+
+    try {
+        field.value = text;
+        // Both listeners on this field are synchronous, so the guard is back
+        // down before anything else can reach it.
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+    } finally {
+        applyingNote = false;
+    }
+
     return true;
 }
 
@@ -796,15 +819,18 @@ function getEffectiveNote() {
 }
 
 /**
- * Whether the note for the open group and layout is currently the chat's
- * Author's Note. Derived from the live field rather than stored, so the toggle
- * still tells the truth after the note is edited by hand or the chat is
- * switched.
+ * Whether the footer's Author's Note toggle is on for this chat.
+ *
+ * Stored rather than derived. Comparing the chat's note against the roster's
+ * used to stand in for this, but every way the roster note can legitimately
+ * change out from under the chat — editing it in the drawer, switching to a
+ * layout with its own note — broke that equality and silently flipped the
+ * toggle off. Living in chat_metadata also means it is saved with the chat, so
+ * it survives a refresh and comes back with the chat next session.
  * @returns {boolean}
  */
 function isNoteApplied() {
-    const note = getEffectiveNote();
-    return Boolean(note) && getChatAuthorsNote() === note;
+    return Boolean(chat_metadata[NOTE_APPLIED_KEY]);
 }
 
 /**
@@ -812,6 +838,76 @@ function isNoteApplied() {
  * chat's note when switched off.
  * @param {boolean} shouldApply
  */
+function setNoteApplied(shouldApply) {
+    const note = getEffectiveNote();
+
+    if (shouldApply && !note) {
+        toastr.info(t`This group has no Author's Note. Set one in Extensions → SideStage.`);
+        refreshPanel();
+        return;
+    }
+
+    if (!setChatAuthorsNote(shouldApply ? note : '')) {
+        refreshPanel();
+        return;
+    }
+
+    chat_metadata[NOTE_APPLIED_KEY] = shouldApply;
+    // setChatAuthorsNote() only schedules a save when the note text itself
+    // changed; switching off a chat whose note is already blank must still
+    // persist the flag.
+    saveMetadataDebounced();
+    refreshPanel();
+}
+
+/**
+ * Keeps the chat's Author's Note in step with the toggle.
+ *
+ * Runs on a chat change and after anything that moves the effective note — a
+ * layout switch, an edit in the drawer. With the toggle on, the chat gets
+ * whatever the roster now says; with it off, nothing is touched, so a note
+ * typed by hand is left alone. A roster whose note has been emptied has
+ * nothing left to apply, so the toggle goes off with it.
+ */
+function syncNoteToChat() {
+    if (!isNoteApplied()) {
+        return;
+    }
+
+    const note = getEffectiveNote();
+
+    if (!note) {
+        chat_metadata[NOTE_APPLIED_KEY] = false;
+        saveMetadataDebounced();
+        return;
+    }
+
+    if (getChatAuthorsNote() !== note) {
+        setChatAuthorsNote(note);
+    }
+}
+
+/**
+ * Turns the toggle off when the chat's note is typed over by hand.
+ *
+ * The stored flag means "this chat is holding the roster's note", and once the
+ * text in the field is something else that is no longer true — leaving it on
+ * would let the next layout switch quietly throw the hand-written note away.
+ * Delegated from the document because the Author's Note field belongs to
+ * another extension's drawer and may not exist yet when this runs.
+ */
+function watchManualNoteEdits() {
+    $(document).on('input', '#extension_floating_prompt', () => {
+        if (applyingNote || !isNoteApplied() || getChatAuthorsNote() === getEffectiveNote()) {
+            return;
+        }
+
+        chat_metadata[NOTE_APPLIED_KEY] = false;
+        saveMetadataDebounced();
+        refreshPanel();
+    });
+}
+
 /**
  * Pins the viewer to one character, or hands it back to the last speaker.
  * @param {string|null} avatar
@@ -820,18 +916,6 @@ function setFocusedAvatar(avatar) {
     focusedAvatar = avatar;
     refreshPanel();
     refocusViewer();
-}
-
-function setNoteApplied(shouldApply) {
-    const note = getEffectiveNote();
-
-    if (shouldApply && !note) {
-        toastr.info(t`This group has no Author's Note. Set one in Extensions → SideStage.`);
-        return;
-    }
-
-    setChatAuthorsNote(shouldApply ? note : '');
-    refreshPanel();
 }
 
 /**
@@ -1828,6 +1912,8 @@ async function setActiveLayout(id) {
 
     roster.activeLayoutId = String(id);
     saveSettingsDebounced();
+    // The new layout may override the group's note, or stop overriding it.
+    syncNoteToChat();
 
     try {
         await applyLayoutMembership();
@@ -2680,8 +2766,9 @@ function addSettings() {
 
         roster.note = String($(this).val());
         saveSettingsDebounced();
-        // The footer toggle greys out for a group with no note, and its checked
-        // state compares against this text.
+        // The chat is holding this text while the toggle is on, and the toggle
+        // greys out for a group with no note at all.
+        syncNoteToChat();
         refreshPanel();
     });
 
@@ -2696,8 +2783,10 @@ function addSettings() {
         saveSettingsDebounced();
 
         // Only the open group's cast can be reshaped from here; another group's
-        // layout takes hold the next time a chat of that group starts.
+        // layout takes hold the next time a chat of that group starts. Its note
+        // is the same story: only the open chat is holding one right now.
         if (getSettingsGroupId() === getCurrentGroup()?.id) {
+            syncNoteToChat();
             await applyLayoutMembership();
         }
 
@@ -2788,8 +2877,9 @@ function addSettings() {
 
         layout.note = String($(this).val());
         saveSettingsDebounced();
-        // The footer toggle prefers this note over the group's, and its checked
-        // state compares against whichever is in play.
+        // This note wins over the group's, so whichever is in play is what the
+        // chat should be holding while the toggle is on.
+        syncNoteToChat();
         refreshPanel();
     });
 
@@ -2862,6 +2952,9 @@ function addSettings() {
  */
 function syncPanelToChat() {
     focusedAvatar = null;
+    // The new chat brings its own toggle state; honour it before anything
+    // repaints from it.
+    syncNoteToChat();
     // Hand the drawer back to the open group; a hand-picked group only outlives
     // the chat it was picked during if the user picks it again.
     settingsGroupId = '';
@@ -3748,6 +3841,7 @@ jQuery(async () => {
     addSettings();
     addWandButton();
     mountAssistBar();
+    watchManualNoteEdits();
 
     eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
     eventSource.on(event_types.GROUP_CHAT_CREATED, openSceneFromLayout);
