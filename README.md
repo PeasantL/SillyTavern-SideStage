@@ -44,8 +44,9 @@ start a new chat with that group.
 
 ### Rewrite
 
-Three buttons in the panel footer, above the Author's Note toggle. Each is a
-one-shot request of its own rather than a trip through the chat's own
+Six buttons in a row above the message box, reachable without opening the
+panel: three rewrites, then a rule, then three out-of-character asides. Each is
+a one-shot request of its own rather than a trip through the chat's own
 generation, so none of them rebuild or re-send the prompt your conversation is
 built on: a rewrite costs one small call and leaves the chat where it was.
 
@@ -62,11 +63,23 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   and clear grammar errors; your word choice, tone and line breaks are left
   alone, as are dialect, fragments, invented names and roleplay formatting.
   Nothing is sent to the chat, and `{{macros}}` come back intact.
+- **OOC**: Posts what you have typed as an out-of-character question and
+  answers it in the voice of whoever spoke last. Both halves of the aside are
+  ghosted — ST's own *Exclude message from prompts* — so the exchange stays on
+  screen but never reaches a later reply.
+- **Morality**: The same aside, asking what is evil about the scene as it
+  stands. Nothing to type.
+- **Scene**: The same aside, asking for a description of the scene as it
+  stands. Nothing to type.
 - **Which AI**: A connection profile chosen in the settings drawer. Leave it on
   the active connection to use whatever is already selected, or point it at
   something small and cheap to keep rewrites off the model running the scene.
-- **Watch it arrive**: With a profile set, a rewrite streams in as it is
-  written — into the message for the first two, into the message box for the
+- **How much chat goes with an aside**: *History sent* in the settings drawer —
+  the whole chat, the last exchange, or the question alone. The whole chat is
+  what an answer about the scene needs; the shorter options trade that for a
+  smaller request.
+- **Watch it arrive**: With a profile set, a reply streams in as it is
+  written — into the message for the rewrites, into the message box for the
   spell check. Nothing is saved until the whole reply is in, and a result that
   fails its checks puts the original back.
 
@@ -95,15 +108,15 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 - **Open the roster**: Wand menu → **SideStage**, or let it open itself when you enter a group chat.
 - **Pick a layout**: The dropdown in the panel footer. It reshapes the cast straight away, and reopens the scene the same way on every new chat.
 - **Build a layout**: Extensions panel → **SideStage** → *Greeting layouts*. Add one, then set each card's *In scene*, *Greets* and *Greeting*, and drag the rows into the order you want the scene to open in.
-- **Rewrite a reply**: The three buttons in the panel footer. Which AI they run
-  on is set in Extensions panel → **SideStage** → *Rewrite*; **Directive** reads
-  the message box, so type the instruction there first.
+- **Rewrite a reply**: The button row above the message box. Which AI they run
+  on is set in Extensions panel → **SideStage** → *Rewrite*; **Directive**,
+  **Spell check** and **OOC** read the message box, so type there first.
 - **Open the gallery**: The gallery button in the viewer's overlay controls.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
 - **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
   - *Roster* — choose which group you're editing; edit its Author's Note; add and remove cards.
   - *Greeting layouts* — add, rename and delete layouts; set the narrator, the note override, and the per-card matrix.
-  - *Rewrite* — the connection profile the footer's three buttons run on.
+  - *Rewrite* — the connection profile the button row runs on, and how much chat goes with an aside.
   - *Images* — *Open the viewer automatically on character select* and *Change with Greeting*.
 
 ## 🔒 Privacy

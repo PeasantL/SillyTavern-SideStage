@@ -265,7 +265,8 @@ body.waifuMode .zoomed_avatar {
     pointer-events: none;
 }
 
-.gr-footer-actions:has(.gr-footer-action-busy) .gr-footer-action:not(.gr-footer-action-busy) {
+.gr-footer-actions:has(.gr-footer-action-busy) .gr-footer-action:not(.gr-footer-action-busy),
+.gr-footer-actions:has(.gr-footer-action-busy) .gr-footer-divider {
     opacity: 0.4;
 }
 
@@ -837,13 +838,18 @@ body.waifuMode .zoomed_avatar {
     min-width: 0;
 }
 
-/* Pinned to the bottom of the row rather than stretched over it, so it sits
-   between the two selects and not between their labels, which are different
-   heights once one of them wraps. */
+/* Pushed to the bottom of its half, so the two selects sit on one line even
+   when one label wraps and the other does not. */
+.ss-settings-field select {
+    margin-top: auto;
+}
+
+/* Full height rather than sized to the selects: the two labels wrap to
+   different numbers of lines, so any fixed height would line up with one half
+   of the row and not the other. */
 .ss-settings-sep {
     flex: 0 0 1px;
-    align-self: flex-end;
-    height: calc(var(--mainFontSize) * 2.2);
+    align-self: stretch;
     background-color: var(--SmartThemeBorderColor);
     opacity: 0.5;
 }
