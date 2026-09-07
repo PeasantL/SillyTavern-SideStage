@@ -35,6 +35,10 @@ import {
     default_avatar,
     getCurrentChatId,
     saveChatConditional,
+    ensureSwipes,
+    syncMesToSwipe,
+    syncSwipeToMes,
+    refreshSwipeButtons,
 } from '../../../../script.js';
 import { getMessageTimeStamp } from '../../../RossAscends-mods.js';
 import { hideChatMessageRange } from '../../../chats.js';
@@ -1244,6 +1248,63 @@ async function replaceMessageText(messageId, text) {
 }
 
 /**
+ * Adds text to a message as a new swipe, moves to it, and persists it.
+ *
+ * Keeps what was there reachable instead of overwriting it: the left chevron
+ * on the last message, and the swipe picker on an older one — ST opens that
+ * for any AI message carrying more than one swipe, so the rewrite is never
+ * somewhere you cannot get back to.
+ * @param {number} messageId
+ * @param {string} text
+ * @returns {Promise<void>}
+ */
+async function appendMessageSwipe(messageId, text) {
+    const message = chat[messageId];
+
+    // Seeds swipes/swipe_id/swipe_info for a message that has never been
+    // swiped, then flushes the live text and extras into the swipe it is
+    // sitting on — an edit made in place is what the left chevron should come
+    // back to, not whatever the swipe held before that edit.
+    ensureSwipes(message);
+
+    if (!Array.isArray(message.swipes) || !Array.isArray(message.swipe_info)) {
+        // ensureSwipes() turns away messages that cannot carry swipes at all —
+        // user turns and small system notices. There is nothing to append to,
+        // so the rewrite goes in where it stands rather than failing.
+        await replaceMessageText(messageId, text);
+        return;
+    }
+
+    syncMesToSwipe(messageId);
+
+    // Same fields ST drops when it pushes extra swipes onto a message: they
+    // describe how the text that was already there came to be. display_text
+    // goes too, since updateMessageBlock() renders it over message.mes and
+    // would show the old reply in place of the rewrite.
+    const extra = structuredClone(message.extra ?? {});
+    delete extra.token_count;
+    delete extra.reasoning;
+    delete extra.reasoning_duration;
+    delete extra.display_text;
+
+    message.swipes.push(text);
+    message.swipe_info.push({
+        send_date: getMessageTimeStamp(),
+        gen_started: message.gen_started,
+        gen_finished: message.gen_finished,
+        extra,
+    });
+    // syncSwipeToMes() is what copies the new swipe's text and extras onto the
+    // message itself, so the two never drift apart here.
+    syncSwipeToMes(messageId, message.swipes.length - 1);
+
+    updateMessageBlock(messageId, message);
+    // true: redraw the counter too, or it still reads the old "1/1".
+    refreshSwipeButtons(true);
+    await saveChatConditional();
+}
+
+/**
  * Paints a streaming rewrite into a message as it arrives, and can put the
  * message back the way it looked when the result turns out to be unusable —
  * by then a partial rewrite is already on screen over it.
@@ -1446,6 +1507,9 @@ async function runDirective() {
     // The target is the last turn of the history rather than a block quoted
     // again underneath it: the model rewrites the reply where it stands, with
     // everything that led to it already in front of it.
+    //
+    // The stream paints over the reply as it arrives; what lands is committed
+    // as a new swipe, so the original is still a chevron away.
     const { onProgress, restore } = streamIntoMessage(messageId);
     let restoreNeeded = true;
 
@@ -1465,7 +1529,7 @@ async function runDirective() {
             throw new Error(t`The model returned nothing.`);
         }
 
-        await replaceMessageText(messageId, rewritten);
+        await appendMessageSwipe(messageId, rewritten);
         restoreNeeded = false;
 
         // Only the directive that was actually used is cleared; anything typed
@@ -1475,7 +1539,7 @@ async function runDirective() {
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
-        toastr.success(t`Reply rewritten.`);
+        toastr.success(t`Rewrite added as a new swipe.`);
     } finally {
         if (restoreNeeded) {
             restore();

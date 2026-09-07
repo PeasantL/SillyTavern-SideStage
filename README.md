@@ -57,8 +57,10 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   from the passage alone.
 - **Directive**: Rewrites the latest character reply to follow whatever you have
   typed in the message box. The chat goes up with it, so an instruction that
-  only makes sense in light of the scene still lands. The box is cleared once
-  the rewrite is applied.
+  only makes sense in light of the scene still lands. The rewrite arrives as a
+  new swipe on that reply rather than overwriting it, so the original is still a
+  chevron away and a directive you don't like costs nothing. The box is cleared
+  once the rewrite is applied.
 - **Spell check**: Copy-edits what you have typed, in place. Typos, punctuation
   and clear grammar errors; your word choice, tone and line breaks are left
   alone, as are dialect, fragments, invented names and roleplay formatting.
