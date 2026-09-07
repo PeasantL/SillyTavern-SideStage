@@ -247,6 +247,18 @@ body.waifuMode .zoomed_avatar {
     white-space: nowrap;
 }
 
+/* Splits the three rewrites from the three asides. Shorter than the buttons so
+   it reads as a grouping mark rather than a border, and flex:0 0 1px keeps it
+   from being squeezed away when the row runs out of room. */
+.gr-footer-divider {
+    flex: 0 0 1px;
+    align-self: center;
+    height: calc(var(--mainFontSize) * 1.2);
+    margin: 0 3px;
+    background-color: var(--SmartThemeBorderColor);
+    opacity: 0.6;
+}
+
 /* One action at a time, and each takes a round trip: the whole row goes inert,
    with only the running button left lit so it is clear which one you pressed. */
 .gr-footer-actions:has(.gr-footer-action-busy) .gr-footer-action {

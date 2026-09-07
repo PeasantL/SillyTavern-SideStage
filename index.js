@@ -1639,14 +1639,25 @@ function mountAssistBar() {
     bar.id = ASSIST_BAR_ID;
     bar.classList.add('gr-footer-actions');
 
-    for (const [icon, label, title, action] of [
+    // Two groups of three, split by a rule: the rewrites edit text that is
+    // already there, the asides post a new exchange. `null` is the divider.
+    for (const entry of [
         ['fa-user-pen', t`Perspective`, t`Correct the perspective of the latest character reply`, runPerspective],
         ['fa-wand-magic-sparkles', t`Directive`, t`Rewrite the latest character reply, following what you have typed in the message box`, runDirective],
         ['fa-spell-check', t`Spell check`, t`Copy-edit what you have typed in the message box`, runSpellCheck],
+        null,
         ['fa-comment-dots', t`OOC`, t`Send what you have typed in the message box as an out-of-character question`, runOOC],
         ['fa-skull', t`Morality`, t`Ask, out of character, about the evil of the current scene`, runMorality],
         ['fa-image', t`Scene`, t`Ask, out of character, for a description of the current scene`, runScene],
     ]) {
+        if (!entry) {
+            const divider = document.createElement('div');
+            divider.classList.add('gr-footer-divider');
+            bar.append(divider);
+            continue;
+        }
+
+        const [icon, label, title, action] = entry;
         const button = document.createElement('div');
         button.classList.add('gr-footer-btn', 'gr-footer-action');
         button.title = title;
