@@ -2034,15 +2034,22 @@ const settingsHtml = `
 
             <div class="ss-settings-section">
                 <div class="ss-settings-heading">Rewrite</div>
-                <label for="ss_assist_profile">Connection profile</label>
-                <select id="ss_assist_profile" class="text_pole"></select>
+                <div class="ss-settings-row">
+                    <div class="ss-settings-field">
+                        <label for="ss_assist_profile">Connection profile</label>
+                        <select id="ss_assist_profile" class="text_pole"></select>
+                    </div>
+                    <div class="ss-settings-sep"></div>
+                    <div class="ss-settings-field">
+                        <label for="ss_ooc_history">History sent with OOC / Morality / Scene</label>
+                        <select id="ss_ooc_history" class="text_pole">
+                            <option value="full">Full chat</option>
+                            <option value="last">Last exchange only</option>
+                            <option value="none">Just the question</option>
+                        </select>
+                    </div>
+                </div>
                 <small id="ss_assist_profile_note" class="ss-settings-warn"></small>
-                <label for="ss_ooc_history">History sent with OOC / Morality / Scene</label>
-                <select id="ss_ooc_history" class="text_pole">
-                    <option value="full">Full chat</option>
-                    <option value="last">Last exchange only</option>
-                    <option value="none">Just the question</option>
-                </select>
             </div>
 
             <div class="ss-settings-divider"></div>
