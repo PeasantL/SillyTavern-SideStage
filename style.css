@@ -951,14 +951,8 @@ body.waifuMode .zoomed_avatar {
     opacity: 0.5;
 }
 
-/* Sub-text under the connection picker. Quiet enough not to compete with the
-   labels above it; the warning variant is the drawer's only coloured text, so
-   it reads as the exception it is, and collapses when there is nothing to say. */
-.ss-settings-note {
-    opacity: 0.6;
-    line-height: 1.4;
-}
-
+/* The drawer's only coloured text, so it reads as the exception it is, and
+   collapses when there is nothing to say. */
 .ss-settings-warn {
     color: var(--warning);
 }

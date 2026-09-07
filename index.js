@@ -2036,18 +2036,6 @@ const settingsHtml = `
                 <div class="ss-settings-heading">Rewrite</div>
                 <label for="ss_assist_profile">Connection profile</label>
                 <select id="ss_assist_profile" class="text_pole"></select>
-                <small class="ss-settings-note">
-                    Runs the <b>Perspective</b>, <b>Directive</b>,
-                    <b>Spell check</b>, <b>OOC</b>, <b>Morality</b> and
-                    <b>Scene</b> buttons. Each is a separate one-shot request, so
-                    none of them rebuild or re-send the chat's own prompt —
-                    nothing from World Info, Author's Note, persona or the Chat
-                    Completion Prompt Manager goes with them except the history
-                    the control below adds. A profile with reasoning
-                    off and a low temperature gives the most faithful rewrites,
-                    and a rewrite only streams in as it is written when a
-                    profile is set — with none, it arrives all at once.
-                </small>
                 <small id="ss_assist_profile_note" class="ss-settings-warn"></small>
                 <label for="ss_ooc_history">History sent with OOC / Morality / Scene</label>
                 <select id="ss_ooc_history" class="text_pole">
@@ -2055,13 +2043,6 @@ const settingsHtml = `
                     <option value="last">Last exchange only</option>
                     <option value="none">Just the question</option>
                 </select>
-                <small class="ss-settings-note">
-                    How much of the chat goes with the OOC request. <b>Full
-                    chat</b> is what the reply needs to describe the scene or
-                    answer about it accurately; the shorter options trade that
-                    off for a smaller, cheaper request and keep less of the
-                    aside itself out of the model's view.
-                </small>
             </div>
 
             <div class="ss-settings-divider"></div>
