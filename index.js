@@ -1470,7 +1470,6 @@ async function runPerspective() {
 
         await replaceMessageText(messageId, rewritten);
         restoreNeeded = false;
-        toastr.success(t`Perspective corrected.`);
     } finally {
         // Anything short of a saved rewrite puts the message back: the stream
         // has already painted a partial one over the top of it.
@@ -1538,8 +1537,6 @@ async function runDirective() {
             textarea.value = '';
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
         }
-
-        toastr.success(t`Rewrite added as a new swipe.`);
     } finally {
         if (restoreNeeded) {
             restore();
@@ -1611,7 +1608,6 @@ async function runSpellCheck() {
 
         write(corrected);
         restoreNeeded = false;
-        toastr.success(t`Message copy-edited.`);
     } finally {
         if (restoreNeeded) {
             write(original);
