@@ -3131,10 +3131,14 @@ function deepScanForImages(obj, foundSet, visited = new WeakSet()) {
 }
 
 // The viewer's home: flush with the right edge, 24px up from the bottom.
-// Expressed as CSS edge offsets rather than computed pixels, so the browser
-// keeps it there through a resize, an orientation change or an iPad app switch
-// without JavaScript having to catch up a frame later.
-const SPAWN_EDGES = { top: "auto", left: "auto", right: "0px", bottom: "24px" };
+// The horizontal half is left to CSS, so the browser keeps the window in the
+// corner through a resize, an orientation change or an iPad app switch without
+// JavaScript having to catch up a frame later. The vertical half cannot be:
+// iOS resolves `bottom` on a fixed element against the layout viewport, which
+// runs on under the browser chrome, and the window disappears behind it.
+function getSpawnTop(height) {
+  return Math.max(0, window.innerHeight - height - 24);
+}
 
 // Where a window is *meant* to sit, so a viewport change can be re-applied from
 // the intent rather than from wherever the element currently happens to be.
@@ -3165,12 +3169,17 @@ function rememberAnchor($win) {
   });
 }
 
-// Send the viewer home and leave it pinned to the viewport edges, so nothing
-// has to reposition it when the viewport changes underneath it.
+// Send the viewer home: pinned to the right edge in CSS, sat on a top the
+// current viewport height decides.
 function anchorViewerToSpawn($win) {
   $win.data(FOLLOW_SPAWN_KEY, true);
   $win.removeData(ANCHOR_KEY);
-  $win.css(SPAWN_EDGES);
+  $win.css({
+    top: `${getSpawnTop($win.outerHeight())}px`,
+    left: "auto",
+    right: "0px",
+    bottom: "auto",
+  });
 }
 
 // Swaps the edge pinning for explicit top/left pixels. Drag and resize both
@@ -3548,9 +3557,11 @@ function spawnSingleImageWindow(startIndex, allImages) {
       winH = winW / aspectRatio;
     }
 
+    const top = getSpawnTop(winH);
+
     const html = `
           <div id="${SINGLE_VIEWER_ID}" class="civ-window-frameless"
-               style="right: 0; bottom: 24px; width: ${winW}px; height: ${winH}px;">
+               style="top: ${top}px; right: 0; width: ${winW}px; height: ${winH}px;">
               <div class="civ-overlay-container">
                   <div class="civ-icon-btn civ-drag-handle" title="Move">
                       <i class="fa-solid fa-grip"></i>
@@ -3874,9 +3885,12 @@ $(window).on(
 
     $(".civ-window-frameless").each(function () {
       const $win = $(this);
-      // A window still sitting in its spawn spot is pinned to the viewport
-      // edges in CSS, so the browser has already moved it.
-      if ($win.data(FOLLOW_SPAWN_KEY)) return;
+      // A window still in its spawn spot holds its own right edge; only the
+      // top has to be recomputed for the new viewport height.
+      if ($win.data(FOLLOW_SPAWN_KEY)) {
+        anchorViewerToSpawn($win);
+        return;
+      }
       // No anchor means the window still sits where its CSS put it, which is
       // already viewport-relative and needs no correction.
       const anchor = $win.data(ANCHOR_KEY);
