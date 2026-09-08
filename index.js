@@ -3131,14 +3131,10 @@ function deepScanForImages(obj, foundSet, visited = new WeakSet()) {
 }
 
 // The viewer's home: flush with the right edge, 24px up from the bottom.
-// Recomputed from the current size so it still lands correctly after a
-// resize or an orientation change.
-function getSpawnPosition(width, height) {
-  return {
-    top: Math.max(0, window.innerHeight - height - 24),
-    left: Math.max(0, window.innerWidth - width),
-  };
-}
+// Expressed as CSS edge offsets rather than computed pixels, so the browser
+// keeps it there through a resize, an orientation change or an iPad app switch
+// without JavaScript having to catch up a frame later.
+const SPAWN_EDGES = { top: "auto", left: "auto", right: "0px", bottom: "24px" };
 
 // Where a window is *meant* to sit, so a viewport change can be re-applied from
 // the intent rather than from wherever the element currently happens to be.
@@ -3154,6 +3150,7 @@ function applyPosition($win, top, left) {
     top: `${Math.max(0, Math.min(top, maxTop))}px`,
     left: `${Math.max(0, Math.min(left, maxLeft))}px`,
     right: "auto",
+    bottom: "auto",
   });
 }
 
@@ -3168,12 +3165,26 @@ function rememberAnchor($win) {
   });
 }
 
-// Send the viewer home and keep it anchored there through viewport changes.
+// Send the viewer home and leave it pinned to the viewport edges, so nothing
+// has to reposition it when the viewport changes underneath it.
 function anchorViewerToSpawn($win) {
-  const { top, left } = getSpawnPosition($win.outerWidth(), $win.outerHeight());
   $win.data(FOLLOW_SPAWN_KEY, true);
-  $win.data(ANCHOR_KEY, { top, left });
-  applyPosition($win, top, left);
+  $win.removeData(ANCHOR_KEY);
+  $win.css(SPAWN_EDGES);
+}
+
+// Swaps the edge pinning for explicit top/left pixels. Drag and resize both
+// move a window by its top-left corner, which a right/bottom pin would fight.
+function pinViewerToPixels($win) {
+  const style = window.getComputedStyle($win[0]);
+  let top = parseFloat(style.top);
+  let left = parseFloat(style.left);
+  if (!Number.isFinite(top) || !Number.isFinite(left)) {
+    const rect = $win[0].getBoundingClientRect();
+    top = rect.top;
+    left = rect.left;
+  }
+  $win.css({ top: `${top}px`, left: `${left}px`, right: "auto", bottom: "auto" });
 }
 
 function resetViewerPosition() {
@@ -3537,11 +3548,9 @@ function spawnSingleImageWindow(startIndex, allImages) {
       winH = winW / aspectRatio;
     }
 
-    const { top, left } = getSpawnPosition(winW, winH);
-
     const html = `
           <div id="${SINGLE_VIEWER_ID}" class="civ-window-frameless"
-               style="top: ${top}px; left: ${left}px; width: ${winW}px; height: ${winH}px;">
+               style="right: 0; bottom: 24px; width: ${winW}px; height: ${winH}px;">
               <div class="civ-overlay-container">
                   <div class="civ-icon-btn civ-drag-handle" title="Move">
                       <i class="fa-solid fa-grip"></i>
@@ -3582,13 +3591,15 @@ function spawnSingleImageWindow(startIndex, allImages) {
       failures: 0,
     };
     $win.data(FOLLOW_SPAWN_KEY, true);
-    $win.data(ANCHOR_KEY, { top, left });
-  
+
     // Draggable & Resizable (locked to aspect ratio)
     if ($.fn.draggable)
       $win.draggable({
         handle: ".civ-drag-handle",
         containment: "window",
+        start: function () {
+          pinViewerToPixels($(this));
+        },
         stop: function () {
           $(this).data(FOLLOW_SPAWN_KEY, false);
           rememberAnchor($(this));
@@ -3598,6 +3609,16 @@ function spawnSingleImageWindow(startIndex, allImages) {
       $win.resizable({
         handles: "se",
         aspectRatio: aspectRatio,
+        // The handle drags the bottom-right corner, so the window has to be
+        // held by its top-left one while it is being resized.
+        start: function () {
+          pinViewerToPixels($(this));
+        },
+        stop: function () {
+          const $this = $(this);
+          if ($this.data(FOLLOW_SPAWN_KEY)) anchorViewerToSpawn($this);
+          else rememberAnchor($this);
+        },
       });
 
     // Skip past dead links instead of showing a broken image.
@@ -3853,10 +3874,9 @@ $(window).on(
 
     $(".civ-window-frameless").each(function () {
       const $win = $(this);
-      if ($win.data(FOLLOW_SPAWN_KEY)) {
-        anchorViewerToSpawn($win);
-        return;
-      }
+      // A window still sitting in its spawn spot is pinned to the viewport
+      // edges in CSS, so the browser has already moved it.
+      if ($win.data(FOLLOW_SPAWN_KEY)) return;
       // No anchor means the window still sits where its CSS put it, which is
       // already viewport-relative and needs no correction.
       const anchor = $win.data(ANCHOR_KEY);
