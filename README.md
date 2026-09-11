@@ -66,13 +66,15 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   alone, as are dialect, fragments, invented names and roleplay formatting.
   Nothing is sent to the chat, and `{{macros}}` come back intact.
 - **OOC**: Posts what you have typed as an out-of-character question and
-  answers it in the voice of whoever spoke last. Both halves of the aside are
-  ghosted — ST's own *Exclude message from prompts* — so the exchange stays on
-  screen but never reaches a later reply.
+  answers it in the voice of whoever spoke last.
 - **Morality**: The same aside, asking what is evil about the scene as it
-  stands. Nothing to type.
+  stands. Nothing to type; the wording is editable in the settings drawer.
 - **Scene**: The same aside, asking for a description of the scene as it
-  stands. Nothing to type.
+  stands. Nothing to type; the wording is editable in the settings drawer.
+- **Ghost**: A toggle at the right end of the row. While it is on, both halves
+  of an aside are ghosted once they land — ST's own *Exclude message from
+  prompts* — so the exchange stays on screen but never reaches a later reply.
+  Turn it off to let the asides count as ordinary chat.
 - **Which AI**: A connection profile chosen in the settings drawer. Leave it on
   the active connection to use whatever is already selected, or point it at
   something small and cheap to keep rewrites off the model running the scene.
@@ -118,7 +120,7 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 - **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
   - *Roster* — choose which group you're editing; edit its Author's Note; add and remove cards.
   - *Greeting layouts* — add, rename and delete layouts; set the narrator, the note override, and the per-card matrix.
-  - *Rewrite* — the connection profile the button row runs on, and how much chat goes with an aside.
+  - *Rewrite* — the connection profile the button row runs on, how much chat goes with an aside, and what the **Morality** and **Scene** buttons ask.
   - *Images* — *Open the viewer automatically on character select* and *Change with Greeting*.
 
 ## 🔒 Privacy

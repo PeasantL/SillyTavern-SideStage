@@ -126,6 +126,21 @@ const rosterDefaults = {
      * @type {'full'|'last'|'none'}
      */
     oocHistory: 'full',
+    /**
+     * Whether an OOC / Morality / Scene exchange is ghosted once it lands —
+     * ST's own "Exclude message from prompts" — so it stays on screen but
+     * never reaches a later reply. Toggled from the button row.
+     * @type {boolean}
+     */
+    oocGhost: true,
+    /**
+     * What the Morality and Scene buttons ask, inside the fixed
+     * ((OOC: Pause the roleplay and respond out of character. ...)) wrapper.
+     * Blank falls back to these defaults.
+     * @type {string}
+     */
+    moralityRequest: 'Describe the evil of the current scene in detail.',
+    sceneRequest: 'Describe the current scene in detail.',
 };
 
 /**
@@ -1721,17 +1736,21 @@ async function runOocTurn(oocLine) {
         await eventSource.emit(event_types.MESSAGE_RECEIVED, replyMessageId, 'normal');
         await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, replyMessageId, 'normal');
 
-        // Both halves of the aside are ghosted — the same "Exclude message
-        // from prompts" state the mes_hide button sets — so the exchange
-        // stays visible but never bleeds into a later Generate() or the next
-        // OOC request's own history.
-        await hideChatMessageRange(askMessageId, replyMessageId, false);
+        // With the Ghost toggle on, both halves of the aside are ghosted — the
+        // same "Exclude message from prompts" state the mes_hide button sets —
+        // so the exchange stays visible but never bleeds into a later
+        // Generate() or the next OOC request's own history.
+        if (getSettings().oocGhost) {
+            await hideChatMessageRange(askMessageId, replyMessageId, false);
+        }
     } catch (error) {
         chat.splice(replyMessageId, 1);
         $(`#chat .mes[mesid="${replyMessageId}"]`).remove();
         // The ask still happened and still gets ghosted on its own; only the
         // reply that never arrived is rolled back.
-        await hideChatMessageRange(askMessageId, askMessageId, false);
+        if (getSettings().oocGhost) {
+            await hideChatMessageRange(askMessageId, askMessageId, false);
+        }
         throw error;
     }
 }
@@ -1755,14 +1774,26 @@ async function runOOC() {
     await runOocTurn(`((OOC: Pause the roleplay and respond out of character: ${input}))`);
 }
 
+/**
+ * Wraps one of the editable asides in the same OOC framing runOOC() uses. A
+ * request cleared in the drawer falls back to the shipped wording rather than
+ * posting an empty aside.
+ * @param {'moralityRequest'|'sceneRequest'} key
+ * @returns {string}
+ */
+function buildFixedOocLine(key) {
+    const request = String(getSettings()[key] ?? '').trim() || rosterDefaults[key];
+    return `((OOC: Pause the roleplay and respond out of character. ${request}))`;
+}
+
 /** Asks about the evil of the current scene, out of character. */
 async function runMorality() {
-    await runOocTurn('((OOC: Pause the roleplay and respond out of character. Describe the evil of the current scene in detail.))');
+    await runOocTurn(buildFixedOocLine('moralityRequest'));
 }
 
 /** Asks for a description of the current scene, out of character. */
 async function runScene() {
-    await runOocTurn('((OOC: Pause the roleplay and respond out of character. Describe the current scene in detail.))');
+    await runOocTurn(buildFixedOocLine('sceneRequest'));
 }
 
 const ASSIST_BAR_ID = 'sidestageAssistBar';
@@ -1783,6 +1814,12 @@ function mountAssistBar() {
     bar.id = ASSIST_BAR_ID;
     bar.classList.add('gr-footer-actions');
 
+    // The buttons sit in their own centred group so the Ghost toggle can be
+    // pinned to the right edge without pulling them off centre.
+    const actions = document.createElement('div');
+    actions.classList.add('gr-assist-actions');
+    bar.append(actions);
+
     // Two groups of three, split by a rule: the rewrites edit text that is
     // already there, the asides post a new exchange. `null` is the divider.
     for (const entry of [
@@ -1797,7 +1834,7 @@ function mountAssistBar() {
         if (!entry) {
             const divider = document.createElement('div');
             divider.classList.add('gr-footer-divider');
-            bar.append(divider);
+            actions.append(divider);
             continue;
         }
 
@@ -1814,8 +1851,32 @@ function mountAssistBar() {
 
         button.append(iconEl, span);
         button.addEventListener('click', () => runAssistAction(button, label, action));
-        bar.append(button);
+        actions.append(button);
     }
+
+    // Whether the OOC / Morality / Scene exchanges are ghosted once they land.
+    // Same markup as the panel's Author's Note toggle, so it lights the same way.
+    const ghost = document.createElement('label');
+    ghost.id = 'sidestageGhostToggle';
+    ghost.classList.add('gr-footer-btn', 'gr-footer-toggle', 'gr-footer-action');
+    ghost.title = t`Exclude the OOC, Morality and Scene exchanges from prompts once they land, so they stay on screen but never reach a later reply`;
+
+    const ghostInput = document.createElement('input');
+    ghostInput.type = 'checkbox';
+    ghostInput.checked = Boolean(getSettings().oocGhost);
+    ghostInput.addEventListener('change', () => {
+        getSettings().oocGhost = ghostInput.checked;
+        saveSettingsDebounced();
+    });
+
+    const ghostIcon = document.createElement('i');
+    ghostIcon.classList.add('fa-solid', 'fa-ghost', 'fa-fw');
+
+    const ghostLabel = document.createElement('span');
+    ghostLabel.textContent = t`Ghost`;
+
+    ghost.append(ghostInput, ghostIcon, ghostLabel);
+    bar.append(ghost);
 
     if (sendForm.children.length > 0) {
         sendForm.children[0].insertAdjacentElement('beforebegin', bar);
@@ -2207,6 +2268,13 @@ const settingsHtml = `
                     </div>
                 </div>
                 <small id="ss_assist_profile_note" class="ss-settings-warn"></small>
+                <label for="ss_morality_request">Morality asks</label>
+                <textarea id="ss_morality_request" class="text_pole textarea_compact" rows="2"
+                          placeholder="Describe the evil of the current scene in detail."></textarea>
+                <label for="ss_scene_request">Scene asks</label>
+                <textarea id="ss_scene_request" class="text_pole textarea_compact" rows="2"
+                          placeholder="Describe the current scene in detail."></textarea>
+                <small class="ss-settings-hint">Each is posted as <code>((OOC: Pause the roleplay and respond out of character. …))</code> and answered by whoever spoke last. Blank restores the default.</small>
             </div>
 
             <div class="ss-settings-divider"></div>
@@ -2754,6 +2822,8 @@ function renderSettings() {
     $('#gr_layout_narrator').val(getSettingsLayout()?.narrator ?? '');
     renderAssistProfileSelect();
     $('#ss_ooc_history').val(getSettings().oocHistory ?? 'full');
+    $('#ss_morality_request').val(getSettings().moralityRequest ?? '');
+    $('#ss_scene_request').val(getSettings().sceneRequest ?? '');
 }
 
 function addSettings() {
@@ -2769,6 +2839,16 @@ function addSettings() {
 
     $('#ss_ooc_history').on('change', function () {
         getSettings().oocHistory = String($(this).val());
+        saveSettingsDebounced();
+    });
+
+    $('#ss_morality_request').on('input', function () {
+        getSettings().moralityRequest = String($(this).val());
+        saveSettingsDebounced();
+    });
+
+    $('#ss_scene_request').on('input', function () {
+        getSettings().sceneRequest = String($(this).val());
         saveSettingsDebounced();
     });
 

@@ -274,18 +274,38 @@ body.waifuMode .zoomed_avatar {
    #send_form slot Quick Reply's own bar uses: width:100% forces it onto its
    own row inside #send_form's flex-wrap, and `order` keeps that row above the
    textarea row (order 25) while sitting below Quick Reply's bar (order 1) if
-   that extension is also enabled. */
+   that extension is also enabled.
+
+   Three columns rather than one flex row: the buttons sit in the middle one so
+   they stay centred, and the Ghost toggle sits in the right one, pinned to the
+   edge. The outer columns share whatever is left over, so the middle stays
+   centred until the row is too narrow for both, at which point the left column
+   gives way first and the whole row scrolls. */
 #sidestageAssistBar {
-    display: flex;
-    flex-wrap: nowrap;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: center;
-    gap: 5px;
+    column-gap: 5px;
     width: 100%;
     max-width: 100%;
     overflow-x: auto;
     order: 2;
-    padding: 4px 6px;
+    /* No bottom padding: the buttons' own 3px margin is all the breathing room
+       the message box below needs, and the row reads as belonging to it. */
+    padding: 4px 6px 0;
+}
+
+.gr-assist-actions {
+    grid-column: 2;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 5px;
+}
+
+#sidestageGhostToggle {
+    grid-column: 3;
+    justify-self: end;
 }
 
 .gr-status {
@@ -1007,4 +1027,14 @@ body.waifuMode .zoomed_avatar {
 
 .ss-settings-warn:empty {
     display: none;
+}
+
+/* Explains the fixed wrapper around the editable asides. Quiet, like the
+   heading, so it reads as a footnote to the two boxes above it. */
+.ss-settings-hint {
+    opacity: 0.6;
+}
+
+.ss-settings-hint code {
+    font-size: 0.95em;
 }
