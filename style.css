@@ -290,9 +290,9 @@ body.waifuMode .zoomed_avatar {
     max-width: 100%;
     overflow-x: auto;
     order: 2;
-    /* No bottom padding: the buttons' own 3px margin is all the breathing room
-       the message box below needs, and the row reads as belonging to it. */
-    padding: 4px 6px 0;
+    /* No top padding: the buttons' own 3px margin is all the breathing room
+       the chat above needs, so the row sits closer to it. */
+    padding: 0 6px 4px;
 }
 
 .gr-assist-actions {
