@@ -793,41 +793,6 @@ body.waifuMode .zoomed_avatar {
     opacity: 0.6;
 }
 
-/* Two pickers sharing a line, each keeping its own label above it. Never
-   wraps: the rule between them only reads as a separator while they are side
-   by side, so the halves shrink instead — their labels wrap, and min-width:0
-   lets a select narrow past its widest option. */
-.ss-settings-row {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 8px;
-}
-
-.ss-settings-field {
-    flex: 1 1 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-}
-
-/* Pushed to the bottom of its half, so the two selects sit on one line even
-   when one label wraps and the other does not. */
-.ss-settings-field select {
-    margin-top: auto;
-}
-
-/* Full height rather than sized to the selects: the two labels wrap to
-   different numbers of lines, so any fixed height would line up with one half
-   of the row and not the other. */
-.ss-settings-sep {
-    flex: 0 0 1px;
-    align-self: stretch;
-    background-color: var(--SmartThemeBorderColor);
-    opacity: 0.5;
-}
-
 /* Both toggles on one line; what the sub-text used to say now lives in their
    title attributes, so nothing was lost with it. */
 .ss-settings-toggles {
@@ -971,16 +936,6 @@ body.waifuMode .zoomed_avatar {
     margin: 12px 0;
     background-color: var(--SmartThemeBorderColor);
     opacity: 0.5;
-}
-
-/* The drawer's only coloured text, so it reads as the exception it is, and
-   collapses when there is nothing to say. */
-.ss-settings-warn {
-    color: var(--warning);
-}
-
-.ss-settings-warn:empty {
-    display: none;
 }
 
 /* Explains the fixed wrapper around the editable asides. Quiet, like the

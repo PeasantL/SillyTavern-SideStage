@@ -119,21 +119,6 @@ const rosterDefaults = {
     /** @type {Record<string, Stage>} Stages by group id, for groups not tied to a world. Created on demand. */
     groups: {},
     /**
-     * Connection profile the footer's rewrite actions run on, by name. Empty
-     * means whatever connection is currently selected. Held by name rather than
-     * by id because ids are regenerated when a profile is rebuilt, and the name
-     * is what the user picked in the dropdown.
-     * @type {string}
-     */
-    assistProfile: '',
-    /**
-     * How much chat history goes into the OOC / Morality / Scene requests:
-     * 'full' (the whole chat), 'last' (just the exchange being asked about),
-     * or 'none' (the question alone).
-     * @type {'full'|'last'|'none'}
-     */
-    oocHistory: 'full',
-    /**
      * Whether an OOC / Morality / Scene exchange is ghosted once it lands —
      * ST's own "Exclude message from prompts" — so it stays on screen but
      * never reaches a later reply. Toggled from the button row.
@@ -217,8 +202,12 @@ function getSettings() {
     delete settings.rosters;
     delete settings.activeRosterId;
     delete settings.legacyRosters;
-    // The Chat Completion prompt picker is gone; drop what it saved.
+    // The Chat Completion prompt picker is gone, and so are the profile and
+    // history pickers (the rewrites follow the selected profile and always
+    // send the whole chat); drop what they saved.
     delete settings.oocPrompts;
+    delete settings.assistProfile;
+    delete settings.oocHistory;
 
     for (const stage of Object.values(settings.groups)) {
         delete stage.cards;
@@ -1578,26 +1567,21 @@ const SPELLCHECK_PROMPT = [
 ].join('\n');
 
 /**
- * Connection profiles that can serve a one-shot request. Empty when the
- * Connection Manager is disabled, which is what the settings note reports.
- * @returns {{id: string, name: string}[]}
- */
-function listAssistProfiles() {
-    try {
-        return SillyTavern.getContext().ConnectionManagerRequestService.getSupportedProfiles() ?? [];
-    } catch (error) {
-        console.warn('[SideStage] Could not list connection profiles', error);
-        return [];
-    }
-}
-
-/**
- * The saved profile, or null for "use whatever connection is selected".
+ * The connection profile selected in ST's Connection Manager, when there is
+ * one that can serve a one-shot request; null means the plain active
+ * connection (no profile, an unsupported one, or the Connection Manager off).
  * @returns {{id: string, name: string}|null}
  */
 function getAssistProfile() {
-    const name = getSettings().assistProfile;
-    return name ? listAssistProfiles().find(x => x.name === name) ?? null : null;
+    try {
+        const context = SillyTavern.getContext();
+        const selected = context.extensionSettings.connectionManager?.selectedProfile;
+        return selected
+            ? context.ConnectionManagerRequestService.getSupportedProfiles().find(x => x.id === selected) ?? null
+            : null;
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -2146,7 +2130,7 @@ async function runSpellCheck() {
  * whoever is currently speaking answers it out of character — but the answer
  * is still a one-shot request like the rewrite actions, not a Generate() call,
  * so it never touches World Info, Author's Note, persona or the jailbreak: the
- * only context it gets is whatever buildOocMessages() below decides to send.
+ * only context it gets is the chat itself.
  */
 
 const OOC_REPLY_PROMPT = [
@@ -2164,28 +2148,6 @@ const OOC_REPLY_PROMPT = [
 ].join('\n');
 
 const OOC_MAX_TOKENS = 1024;
-
-/**
- * How much chat history goes into an OOC request, per the "History sent with
- * OOC" setting: the whole chat, just the exchange being asked about, or the
- * question alone.
- * @param {number} speakerMessageId The character reply OOC is asking about
- * @param {number} askMessageId The OOC ask itself, already appended to `chat`
- * @returns {{role: string, content: string}[]}
- */
-function buildOocMessages(speakerMessageId, askMessageId) {
-    switch (getSettings().oocHistory) {
-        case 'none':
-            return buildChatMessages(askMessageId).slice(-1);
-        case 'last':
-            return [
-                ...buildChatMessages(speakerMessageId).slice(-1),
-                ...buildChatMessages(askMessageId).slice(-1),
-            ];
-        default:
-            return buildChatMessages(askMessageId);
-    }
-}
 
 /**
  * Posts an OOC line as a real user turn, then asks whoever last spoke to
@@ -2235,7 +2197,7 @@ async function runOocTurn(oocLine) {
     try {
         const result = await runAssistRequest([
             { role: 'system', content: systemPrompt },
-            ...buildOocMessages(speakerMessageId, askMessageId),
+            ...buildChatMessages(askMessageId),
         ], OOC_MAX_TOKENS, onProgress);
 
         if (!result?.trim()) {
@@ -2766,22 +2728,7 @@ const settingsHtml = `
 
             <div class="ss-settings-section">
                 <div class="ss-settings-heading">Rewrite</div>
-                <div class="ss-settings-row">
-                    <div class="ss-settings-field">
-                        <label for="ss_assist_profile">Connection profile</label>
-                        <select id="ss_assist_profile" class="text_pole"></select>
-                    </div>
-                    <div class="ss-settings-sep"></div>
-                    <div class="ss-settings-field">
-                        <label for="ss_ooc_history">History sent with OOC / Morality / Scene</label>
-                        <select id="ss_ooc_history" class="text_pole">
-                            <option value="full">Full chat</option>
-                            <option value="last">Last exchange only</option>
-                            <option value="none">Just the question</option>
-                        </select>
-                    </div>
-                </div>
-                <small id="ss_assist_profile_note" class="ss-settings-warn"></small>
+                <small class="ss-settings-hint">The rewrites run on the connection profile selected in SillyTavern (or the active connection when none is), and the asides send the whole chat.</small>
                 <label for="ss_morality_request">Morality asks</label>
                 <textarea id="ss_morality_request" class="text_pole textarea_compact" rows="2"
                           placeholder="Describe the evil of the current scene in detail."></textarea>
@@ -3149,47 +3096,6 @@ function saveLayoutOrder() {
     saveStage(getSettingsGroupId());
 }
 
-/**
- * Fills the connection-profile dropdown. A saved profile that has since been
- * renamed or deleted keeps its place in the list, marked, so choosing something
- * else in the drawer is what clears the setting rather than merely opening it.
- */
-function renderAssistProfileSelect() {
-    const select = /** @type {HTMLSelectElement} */ (document.getElementById('ss_assist_profile'));
-
-    if (!select) {
-        return;
-    }
-
-    const saved = getSettings().assistProfile ?? '';
-    const profiles = listAssistProfiles();
-    const missing = Boolean(saved) && !profiles.some(x => x.name === saved);
-
-    select.innerHTML = '';
-
-    const active = document.createElement('option');
-    active.value = '';
-    active.textContent = t`Active connection (whatever is selected)`;
-    select.appendChild(active);
-
-    for (const name of [...profiles.map(x => x.name), ...(missing ? [saved] : [])]) {
-        const option = document.createElement('option');
-        option.value = name;
-        option.textContent = missing && name === saved ? t`${name} (missing)` : name;
-        select.appendChild(option);
-    }
-
-    select.value = saved;
-
-    const note = document.getElementById('ss_assist_profile_note');
-
-    if (note) {
-        note.textContent = missing
-            ? t`"${saved}" no longer exists — the buttons will use the active connection.`
-            : profiles.length ? '' : t`No connection profiles found. Create one in the Connection Manager.`;
-    }
-}
-
 function renderSettings() {
     if (!document.getElementById('gr_group_select')) {
         return;
@@ -3202,27 +3108,12 @@ function renderSettings() {
     $('#gr_roster_note').val(getSettingsStage()?.note ?? '').prop('disabled', !getSettingsStage());
     $('#gr_layout_note').val(getSettingsLayout()?.note ?? '');
     $('#gr_layout_narrator').val(getSettingsLayout()?.narrator ?? '');
-    renderAssistProfileSelect();
-    $('#ss_ooc_history').val(getSettings().oocHistory ?? 'full');
     $('#ss_morality_request').val(getSettings().moralityRequest ?? '');
     $('#ss_scene_request').val(getSettings().sceneRequest ?? '');
 }
 
 function addSettings() {
     $('#extensions_settings2').append(settingsHtml);
-
-    $('#ss_assist_profile').on('change', function () {
-        getSettings().assistProfile = String($(this).val());
-        saveSettingsDebounced();
-        // Repaint so a profile that had gone missing drops out of the list once
-        // something that exists has been chosen in its place.
-        renderAssistProfileSelect();
-    });
-
-    $('#ss_ooc_history').on('change', function () {
-        getSettings().oocHistory = String($(this).val());
-        saveSettingsDebounced();
-    });
 
     $('#ss_morality_request').on('input', function () {
         getSettings().moralityRequest = String($(this).val());

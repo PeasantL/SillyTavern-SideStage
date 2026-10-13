@@ -86,14 +86,11 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   of an aside are ghosted once they land — ST's own *Exclude message from
   prompts* — so the exchange stays on screen but never reaches a later reply.
   Turn it off to let the asides count as ordinary chat.
-- **Which AI**: A connection profile chosen in the settings drawer. Leave it on
-  the active connection to use whatever is already selected, or point it at
-  something small and cheap to keep rewrites off the model running the scene.
-- **How much chat goes with an aside**: *History sent* in the settings drawer —
-  the whole chat, the last exchange, or the question alone. The whole chat is
-  what an answer about the scene needs; the shorter options trade that for a
-  smaller request.
-- **Watch it arrive**: With a profile set, a reply streams in as it is
+- **Which AI**: The connection profile selected in SillyTavern's Connection
+  Manager, or the active connection when none is selected.
+- **How much chat goes with an aside**: The whole chat, which is what an answer
+  about the scene needs.
+- **Watch it arrive**: On a connection profile, a reply streams in as it is
   written — into the message for the rewrites, into the message box for the
   spell check. Nothing is saved until the whole reply is in, and a result that
   fails its checks puts the original back.
@@ -124,15 +121,15 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 - **Mute or unmute a member**: The first toggle on a card in the panel.
 - **Pick a layout**: The dropdown in the panel footer. It mutes and unmutes straight away, and reopens the scene the same way on every new chat.
 - **Build a layout**: Extensions panel → **SideStage** → *Greeting layouts*. Add one, then set each card's *In scene*, *Greets* and *Greeting*, and drag the rows into the order you want the scene to open in.
-- **Rewrite a reply**: The button row above the message box. Which AI they run
-  on is set in Extensions panel → **SideStage** → *Rewrite*; **Directive**,
+- **Rewrite a reply**: The button row above the message box. They run on the
+  connection profile selected in SillyTavern; **Directive**,
   **Spell check** and **OOC** read the message box, so type there first.
 - **Open the gallery**: The gallery button in the viewer's overlay controls.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
 - **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
   - *Group* — choose which group you're editing (and see whether it is a world's group); ⟳ syncs the world groups; edit its Author's Note.
   - *Greeting layouts* — add, rename and delete layouts; set the narrator, the note override, and the per-card matrix.
-  - *Rewrite* — the connection profile the button row runs on, how much chat goes with an aside, and what the **Morality** and **Scene** buttons ask.
+  - *Rewrite* — what the **Morality** and **Scene** buttons ask.
   - *Images* — *Open the viewer automatically on character select* and *Change with Greeting*.
 
 ## 🔒 Privacy
