@@ -2832,9 +2832,8 @@ function renderGroupSelect() {
     for (const group of groups) {
         const option = document.createElement('option');
         option.value = group.id;
-        const world = getGroupWorld(group.id);
-        const count = group.members?.length ?? 0;
-        option.textContent = world ? `${group.name} (${count}) · ${world}` : `${group.name} (${count})`;
+        // A world's group is named after its world, so the name says both.
+        option.textContent = `${group.name} (${group.members?.length ?? 0})`;
         select.appendChild(option);
     }
 
@@ -2853,7 +2852,7 @@ function renderWorldRow() {
     const world = group ? getGroupWorld(group.id) : '';
 
     status.textContent = !group ? t`No group chats yet. Every world (a lorebook marked by the Character Editor) gets its own group.`
-        : world ? t`The group of the world "${world}": its members are the world's cards, and they join and leave with the world. Mute and unmute them from the panel.`
+        : world ? t`A world's group: its members are the world's cards, and they join and leave with the world. Mute and unmute them from the panel.`
             : t`An ordinary group: its members are managed in SillyTavern's group settings. Every world gets its own group.`;
 }
 
