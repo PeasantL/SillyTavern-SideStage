@@ -53,7 +53,6 @@ import {
     editGroup,
     unshallowGroupMembers,
     select_group_chats,
-    openGroupById,
     group_generation_mode,
     DEFAULT_AUTO_MODE_DELAY,
 } from '../../../group-chats.js';
@@ -467,18 +466,21 @@ function pruneOrphanStages() {
 // #region Worlds
 
 /**
- * Groups tied to a world.
+ * Every world has its own group.
  *
  * A world is a lorebook the Character Editor has marked as one
  * (extensions.character_editor.world). Its cast is every card that links it
- * (data.extensions.world), and the group tied to it has exactly that cast as
- * members: cards join and leave the group as they join and leave the world,
- * and who is in the scene is who is unmuted.
+ * (data.extensions.world). SideStage creates a group for each world that has a
+ * cast, named after it, and keeps it so: its members are exactly the world's
+ * cards (they join and leave with the world), who is in the scene is who is
+ * unmuted, and its name follows the world's. A world whose group is deleted
+ * gets a new one; a group whose world is gone becomes an ordinary group, as
+ * SideStage never deletes a group (that would delete its chats).
  *
- * The tie and the group's stage live in the lorebook, under
+ * Which group is the world's, and the group's stage, live in the lorebook under
  * extensions.sidestage ({group, note, activeLayoutId, layouts}), so they travel
  * with the world and survive the editor renaming it; the group file only ever
- * holds ST's own fields. One group per world.
+ * holds ST's own fields.
  *
  * Cards changed outside ST (the editor) reach ST's character list on a reload;
  * the sync button reloads it without one.
@@ -490,8 +492,10 @@ const WORLD_SAVE_DELAY = 1000;
 const groupWorlds = new Map();
 /** World lorebook name -> the stage kept in it, for worlds tied to a group. */
 const worldStages = new Map();
-/** World lorebook name -> id of the group tied to it ('' for none), for every world any card links. */
+/** World lorebook name -> id of its group ('' while it has none), for every world any card links. */
 const worldLorebooks = new Map();
+/** World lorebook name -> the group id its file named when last read, even one since deleted. */
+const recordedGroups = new Map();
 /** Whether resolveWorlds() has run, so a group missing from groupWorlds is known to have no world. */
 let worldsResolved = false;
 
@@ -624,6 +628,7 @@ async function resolveWorlds() {
     const stages = new Map();
     const lorebooks = new Map();
     const owners = new Map();
+    const recorded = new Map();
 
     for (const name of names) {
         let data = null;
@@ -640,11 +645,12 @@ async function resolveWorlds() {
 
         const stage = data.extensions[WORLD_KEY];
         const groupId = stage && typeof stage === 'object' ? String(stage.group ?? '') : '';
-        // A world whose group has been deleted keeps its layouts for the next
-        // group tied to it, but counts as having no group.
+        // A world whose group has been deleted keeps its layouts for the group
+        // made to replace it, but counts as having no group.
         const owned = groupId && groups.some(x => x.id === groupId) && !owners.has(groupId);
 
         lorebooks.set(name, owned ? groupId : '');
+        recorded.set(name, groupId);
 
         if (owned) {
             owners.set(groupId, name);
@@ -656,6 +662,8 @@ async function resolveWorlds() {
     stages.forEach((stage, name) => worldStages.set(name, stage));
     worldLorebooks.clear();
     lorebooks.forEach((owner, name) => worldLorebooks.set(name, owner));
+    recordedGroups.clear();
+    recorded.forEach((groupId, name) => recordedGroups.set(name, groupId));
     groupWorlds.clear();
 
     for (const group of groups) {
@@ -666,9 +674,10 @@ async function resolveWorlds() {
 }
 
 /**
- * Brings a world group's members in step with its world: cards of the world
- * that aren't members join (muted, unless the selected layout puts them in the
- * scene), and members that aren't in the world leave.
+ * Brings a world's group in step with its world: cards of the world that
+ * aren't members join (muted, unless the selected layout puts them in the
+ * scene), members that aren't in the world leave, and the name follows the
+ * world's (renamed in the Character Editor).
  * @param {string} groupId
  * @returns {Promise<boolean>} Whether the group was changed
  */
@@ -702,12 +711,13 @@ async function syncWorldGroup(groupId) {
     const sameMembers = nextMembers.length === members.length && nextMembers.every((x, i) => members[i] === x);
     const sameMuted = nextMuted.length === muted.length && nextMuted.every(x => muted.includes(x));
 
-    if (sameMembers && sameMuted) {
+    if (sameMembers && sameMuted && group.name === world) {
         return false;
     }
 
     group.members = nextMembers;
     group.disabled_members = nextMuted;
+    group.name = world;
 
     await editGroup(groupId, true, false);
     refreshGroupControlPanel();
@@ -715,7 +725,7 @@ async function syncWorldGroup(groupId) {
     return true;
 }
 
-/** Syncs every group tied to a world. */
+/** Syncs every world's group. */
 async function syncWorldGroups() {
     for (const [groupId, world] of groupWorlds) {
         if (world) {
@@ -727,8 +737,8 @@ async function syncWorldGroups() {
 let refreshingWorlds = null;
 
 /**
- * Re-reads which groups belong to which worlds and brings their members in
- * step. With `reload`, first reloads ST's characters and groups from disk, so
+ * Re-reads which groups belong to which worlds, creates the groups worlds
+ * are missing and brings them all in step. With `reload`, first reloads ST's characters and groups from disk, so
  * cards changed in the Character Editor since ST loaded are seen without
  * reloading the page.
  * @param {{reload?: boolean}} [options]
@@ -746,6 +756,7 @@ function refreshWorlds({ reload = false } = {}) {
             }
 
             await resolveWorlds();
+            await ensureWorldGroups();
             await syncWorldGroups();
         } catch (error) {
             console.error('[SideStage] Could not sync the world groups', error);
@@ -768,143 +779,20 @@ const syncWorldGroupsSoon = debounce(() => {
 }, 500);
 
 /**
- * Ties a group to a world. Its stage moves into the world's lorebook (merged
- * with layouts the world kept from an earlier group), and its members are
- * brought in step with the world's cast.
- * @param {string} groupId
+ * Creates a world's group, with the world's whole cast in the scene, and
+ * records it in the world's lorebook (keeping layouts the world kept from a
+ * deleted group). Members' cards are joined (Append) rather than swapped, so
+ * the scene's card text is the unmuted members'.
  * @param {string} world
- * @param {{confirm?: boolean}} [options]
- * @returns {Promise<boolean>} Whether the group was tied
+ * @param {object} data The world's lorebook, freshly read
  */
-async function linkGroupToWorld(groupId, world, { confirm = true } = {}) {
-    const group = groups.find(x => x.id === groupId);
-
-    if (!group || !world) {
-        return false;
-    }
-
-    const owner = worldLorebooks.get(world);
-
-    if (owner && owner !== groupId) {
-        const name = groups.find(x => x.id === owner)?.name ?? owner;
-        toastr.warning(t`"${world}" already has a group: ${name}.`);
-        return false;
-    }
-
-    const cast = getWorldCast(world);
-
-    if (!cast.length) {
-        toastr.warning(t`No card links "${world}", so it has no cast.`);
-        return false;
-    }
-
-    const leaving = (group.members ?? []).filter(avatar => !cast.includes(avatar));
-
-    if (confirm) {
-        const names = leaving.map(avatar => getCharacterByAvatar(avatar)?.name ?? avatar).join(', ');
-        const message = t`From now on this group's members are the cards of "${world}": they join and leave with the world, and the panel mutes and unmutes them.`
-            + (leaving.length ? ' ' + t`Leaving the group, as they aren't in the world: ${names}.` : '');
-
-        if (!(await Popup.show.confirm(t`Tie "${group.name}" to "${world}"?`, message))) {
-            return false;
-        }
-    }
-
-    await flushWorldSaves();
-
-    const data = await fetchWorld(world);
-
-    if (!isWorldLorebook(data)) {
-        toastr.error(t`"${world}" is not a world (or could not be read).`);
-        return false;
-    }
-
-    const settings = getSettings();
-    const kept = data.extensions[WORLD_KEY];
-    const stage = normalizeStage(kept && typeof kept === 'object' ? kept : {});
-    const own = settings.groups[groupId];
-
-    if (own) {
-        // The group's own layouts come along, after any the world kept.
-        stage.layouts.push(...own.layouts.filter(x => !stage.layouts.some(y => y.id === x.id)));
-        stage.note = stage.note || own.note;
-        stage.activeLayoutId = own.activeLayoutId || stage.activeLayoutId;
-    }
-
-    stage.group = groupId;
-    worldStages.set(world, stage);
-    worldLorebooks.set(world, groupId);
-    groupWorlds.set(groupId, world);
-
-    try {
-        await writeWorldStage(world);
-    } catch (error) {
-        worldStages.delete(world);
-        worldLorebooks.set(world, '');
-        groupWorlds.set(groupId, '');
-        throw error;
-    }
-
-    delete settings.groups[groupId];
-    saveSettingsDebounced();
-    await syncWorldGroup(groupId);
-    syncNoteToChat();
-    return true;
-}
-
-/**
- * Unties a group from its world. Its stage moves back into the settings and
- * out of the lorebook; its members stay as they are.
- * @param {string} groupId
- */
-async function unlinkGroupFromWorld(groupId) {
-    const world = getGroupWorld(groupId);
-
-    if (!world) {
-        return;
-    }
-
-    clearTimeout(pendingWorldSaves.get(world));
-    pendingWorldSaves.delete(world);
-
-    const stage = worldStages.get(world);
-    const settings = getSettings();
-    settings.groups[groupId] = normalizeStage({
-        note: stage?.note, layouts: stage?.layouts, activeLayoutId: stage?.activeLayoutId,
-    });
-    saveSettingsDebounced();
-
-    worldStages.delete(world);
-    worldLorebooks.set(world, '');
-    groupWorlds.set(groupId, '');
-    await writeWorldStage(world);
-}
-
-/**
- * Creates a group for a world, with the world's whole cast in the scene, ties
- * it to the world and opens it. Members' cards are joined (Append) rather than
- * swapped, so the scene's card text is the unmuted members'.
- * @param {string} world
- */
-async function createWorldGroup(world) {
-    const cast = getWorldCast(world);
-
-    if (!cast.length) {
-        toastr.warning(t`No card links "${world}", so it has no cast.`);
-        return;
-    }
-
-    if (worldLorebooks.get(world)) {
-        toastr.warning(t`"${world}" already has a group.`);
-        return;
-    }
-
+async function createWorldGroup(world, data) {
     const response = await fetch('/api/groups/create', {
         method: 'POST',
         headers: getRequestHeaders(),
         body: JSON.stringify({
             name: world,
-            members: cast,
+            members: getWorldCast(world),
             disabled_members: [],
             avatar_url: default_avatar,
             allow_self_responses: false,
@@ -915,15 +803,65 @@ async function createWorldGroup(world) {
     });
 
     if (!response.ok) {
-        throw new Error(t`SillyTavern could not create the group.`);
+        throw new Error(t`SillyTavern could not create a group for the world "${world}".`);
     }
 
     const created = await response.json();
-    // Reloads the groups too, which is how the new one reaches the group list.
+    const kept = data.extensions[WORLD_KEY];
+    const stage = normalizeStage(kept && typeof kept === 'object' ? kept : {});
+    stage.group = String(created.id);
+
+    worldStages.set(world, stage);
+    worldLorebooks.set(world, stage.group);
+    recordedGroups.set(world, stage.group);
+    groupWorlds.set(stage.group, world);
+    await writeWorldStage(world);
+}
+
+/**
+ * Creates a group for every world with a cast and none of its own: a new
+ * world, or one whose group was deleted.
+ */
+async function ensureWorldGroups() {
+    const made = [];
+
+    for (const [world, owner] of worldLorebooks) {
+        if (owner || !getWorldCast(world).length) {
+            continue;
+        }
+
+        try {
+            const data = await fetchWorld(world);
+
+            if (!isWorldLorebook(data)) {
+                continue;
+            }
+
+            // A group recorded since the file was read means another SillyTavern
+            // tab has just made this world's group: leave it to that one.
+            const recorded = data.extensions[WORLD_KEY]?.group;
+
+            if (String(recorded ?? '') !== (recordedGroups.get(world) ?? '')) {
+                continue;
+            }
+
+            await createWorldGroup(world, data);
+            made.push(world);
+        } catch (error) {
+            console.error('[SideStage] Could not create the world group', world, error);
+            toastr.error(error?.message || t`Unknown error`, t`Could not create a group for "${world}"`);
+        }
+    }
+
+    if (!made.length) {
+        return;
+    }
+
+    // Reloads the groups too, which is how the new ones reach ST's group list.
     await getCharacters();
-    groupWorlds.set(created.id, '');
-    await linkGroupToWorld(created.id, world, { confirm: false });
-    await openGroupById(created.id);
+    toastr.info(made.length === 1
+        ? t`Created a group for the world "${made[0]}".`
+        : t`Created groups for the worlds ${made.join(', ')}.`);
 }
 
 /**
@@ -2785,14 +2723,9 @@ const settingsHtml = `
                 <div class="ss-settings-heading">Group</div>
                 <label for="gr_group_select">Group</label>
                 <select id="gr_group_select" class="text_pole"></select>
-                <small id="gr_world_status" class="ss-settings-hint"></small>
-                <label for="gr_world_select">World</label>
                 <div class="flex-container alignItemsCenter">
-                    <select id="gr_world_select" class="text_pole flex1"></select>
-                    <div id="gr_world_link" class="menu_button interactable gr-flat-button" title="Tie the group above to this world: its members become the world's cards">Tie</div>
-                    <div id="gr_world_create" class="menu_button interactable gr-flat-button" title="Create a group with this world's cards and open it">New group</div>
-                    <div id="gr_world_unlink" class="menu_button interactable gr-flat-button" title="Untie the group above from its world. Its members stay as they are">Untie</div>
-                    <div id="gr_world_sync" class="menu_button menu_button_icon interactable" title="Reload the characters and bring every world's group in step with its cards">
+                    <small id="gr_world_status" class="ss-settings-hint flex1"></small>
+                    <div id="gr_world_sync" class="menu_button menu_button_icon interactable" title="Reload the characters, create the groups worlds are missing, and bring every world's group in step with its cards">
                         <i class="fa-solid fa-rotate fa-fw"></i>
                     </div>
                 </div>
@@ -2908,55 +2841,20 @@ function renderGroupSelect() {
     select.value = getSettingsGroupId();
 }
 
-/**
- * The World row: which world the group is tied to, the worlds there are, and
- * what can be done with the one picked.
- */
+/** Says whether the group being edited is a world's group. */
 function renderWorldRow() {
-    const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_world_select'));
     const status = document.getElementById('gr_world_status');
 
-    if (!select || !status) {
+    if (!status) {
         return;
     }
 
     const group = getSettingsGroup();
     const world = group ? getGroupWorld(group.id) : '';
-    const previous = select.value;
-    const names = [...worldLorebooks.keys()].sort((a, b) => a.localeCompare(b));
 
-    select.innerHTML = '';
-
-    for (const name of names) {
-        const owner = worldLorebooks.get(name);
-        const option = document.createElement('option');
-        option.value = name;
-        const cast = getWorldCast(name).length;
-        const ownerName = owner ? groups.find(x => x.id === owner)?.name ?? owner : '';
-        option.textContent = ownerName ? t`${name} (${cast}) — group: ${ownerName}` : t`${name} (${cast})`;
-        select.appendChild(option);
-    }
-
-    if (!names.length) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = worldsResolved ? t`No worlds (lorebooks marked as worlds by the Character Editor)` : t`Loading…`;
-        select.appendChild(option);
-    }
-
-    select.value = world || (names.includes(previous) ? previous : names.find(x => !worldLorebooks.get(x)) ?? names[0] ?? '');
-    select.disabled = Boolean(world) || !names.length;
-
-    const picked = select.value;
-    const pickedOwner = worldLorebooks.get(picked) ?? '';
-
-    $('#gr_world_link').toggle(!world).toggleClass('disabled', !group || !picked || Boolean(pickedOwner));
-    $('#gr_world_create').toggle(!world).toggleClass('disabled', !picked || Boolean(pickedOwner));
-    $('#gr_world_unlink').toggle(Boolean(world));
-
-    status.textContent = !group ? t`Create a group chat, or a group for a world below.`
-        : world ? t`Tied to the world "${world}": its cards are this group's members, and they join and leave with the world. Mute and unmute them from the panel.`
-            : t`Not tied to a world. Its members are managed in SillyTavern's group settings.`;
+    status.textContent = !group ? t`No group chats yet. Every world (a lorebook marked by the Character Editor) gets its own group.`
+        : world ? t`The group of the world "${world}": its members are the world's cards, and they join and leave with the world. Mute and unmute them from the panel.`
+            : t`An ordinary group: its members are managed in SillyTavern's group settings. Every world gets its own group.`;
 }
 
 /** @returns {Layout|null} The layout the settings drawer edits. */
@@ -3342,15 +3240,8 @@ function addSettings() {
         renderSettings();
     });
 
-    $('#gr_world_select').on('change', renderWorldRow);
-
-    /**
-     * Runs a World row action with its button disabled, reporting failures.
-     * @param {string} selector
-     * @param {function(): Promise<void>} work
-     */
-    const worldAction = async (selector, work) => {
-        const $button = $(selector);
+    $('#gr_world_sync').on('click', async () => {
+        const $button = $('#gr_world_sync');
 
         if ($button.hasClass('disabled')) {
             return;
@@ -3359,43 +3250,11 @@ function addSettings() {
         $button.addClass('disabled');
 
         try {
-            await work();
-        } catch (error) {
-            console.error('[SideStage] World action failed', error);
-            toastr.error(error?.message || t`Unknown error`);
+            await refreshWorlds({ reload: true });
         } finally {
             $button.removeClass('disabled');
-            renderSettings();
-            refreshPanel();
         }
-    };
-
-    $('#gr_world_link').on('click', () => worldAction('#gr_world_link', async () => {
-        await linkGroupToWorld(getSettingsGroupId(), String($('#gr_world_select').val()));
-    }));
-
-    $('#gr_world_create').on('click', () => worldAction('#gr_world_create', async () => {
-        await createWorldGroup(String($('#gr_world_select').val()));
-        settingsGroupId = '';
-    }));
-
-    $('#gr_world_unlink').on('click', () => worldAction('#gr_world_unlink', async () => {
-        const group = getSettingsGroup();
-        const world = group ? getGroupWorld(group.id) : '';
-
-        if (!world) {
-            return;
-        }
-
-        const confirmed = await Popup.show.confirm(t`Untie "${group.name}" from "${world}"?`,
-            t`Its members stay as they are, and its layouts and note move back into SideStage's settings.`);
-
-        if (confirmed) {
-            await unlinkGroupFromWorld(group.id);
-        }
-    }));
-
-    $('#gr_world_sync').on('click', () => worldAction('#gr_world_sync', () => refreshWorlds({ reload: true })));
+    });
 
     $('#gr_roster_note').on('input', function () {
         const stage = getSettingsStage();

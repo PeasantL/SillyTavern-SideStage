@@ -20,14 +20,15 @@ settings drawer.
 ### World groups
 
 A *world* is a lorebook shared by the cards of one setting, as made by the
-Character Editor (a lorebook
-marked `extensions.character_editor.world`; its cast is every card that links
-it). SideStage can tie one group to each world:
+Character Editor (a lorebook marked `extensions.character_editor.world`; its
+cast is every card that links it). Every world gets its own group, made and
+kept by SideStage:
 
-- **Members follow the world**: The group's members are exactly the world's cards. A card that joins the world joins the group, muted unless the selected layout puts it in the scene; a card that leaves the world, or any other member, leaves the group.
-- **Kept in the world**: The tie, the group's note and its layouts are stored in the world's lorebook (`extensions.sidestage`), so they travel with the world and survive it being renamed. SideStage re-reads the lorebook before each save and only replaces that key, so lore edited elsewhere is kept.
+- **Made for you**: When SillyTavern starts (or on ⟳), each world with at least one card and no group of its own gets one: named after the world, the world's cards in the scene, and the Append join mode. Delete it and a new one is made (layouts are kept); a world with no cards yet gets its group when its first card joins.
+- **Members follow the world**: The group's members are exactly the world's cards. A card that joins the world joins the group, muted unless the selected layout puts it in the scene; a card that leaves the world, or any other member, leaves the group. The group's name follows the world's.
+- **Kept in the world**: Which group is the world's, the group's note and its layouts are stored in the world's lorebook (`extensions.sidestage`), so they travel with the world and survive it being renamed. SideStage re-reads the lorebook before each save and only replaces that key, so lore edited elsewhere is kept.
 - **Sync**: The group is brought in step when SillyTavern starts, when you open its chat, and when a card is edited or deleted in SillyTavern. Cards changed outside SillyTavern (in the Character Editor) reach it on a reload, or straight away with the ⟳ button in the panel header or the drawer.
-- **Tie, untie, create**: Extensions → SideStage → *World*: tie the group being edited to a world, untie it (its members stay; its note and layouts move back into SideStage's settings), or create a new group for a world (with the world's cards in the scene and the Append join mode) and open it.
+- **Never deleted**: A group whose world is gone (deleted, or its cards unlinked) stays as an ordinary group, with its chats. Groups you make yourself are ordinary groups too: their members are managed in SillyTavern, and SideStage mutes and unmutes them.
 
 ### Greeting layouts
 
@@ -121,7 +122,6 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 
 - **Open the roster**: Wand menu → **SideStage**, or let it open itself when you enter a group chat.
 - **Mute or unmute a member**: The first toggle on a card in the panel.
-- **Give a world its group**: Extensions panel → **SideStage** → *Group*: pick the world and press *New group*, or pick a group and press *Tie*.
 - **Pick a layout**: The dropdown in the panel footer. It mutes and unmutes straight away, and reopens the scene the same way on every new chat.
 - **Build a layout**: Extensions panel → **SideStage** → *Greeting layouts*. Add one, then set each card's *In scene*, *Greets* and *Greeting*, and drag the rows into the order you want the scene to open in.
 - **Rewrite a reply**: The button row above the message box. Which AI they run
@@ -130,7 +130,7 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 - **Open the gallery**: The gallery button in the viewer's overlay controls.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
 - **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
-  - *Group* — choose which group you're editing; tie it to a world, untie it, or create a group for a world; edit its Author's Note.
+  - *Group* — choose which group you're editing (and see whether it is a world's group); ⟳ syncs the world groups; edit its Author's Note.
   - *Greeting layouts* — add, rename and delete layouts; set the narrator, the note override, and the per-card matrix.
   - *Rewrite* — the connection profile the button row runs on, how much chat goes with an aside, and what the **Morality** and **Scene** buttons ask.
   - *Images* — *Open the viewer automatically on character select* and *Change with Greeting*.
