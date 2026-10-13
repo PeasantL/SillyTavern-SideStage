@@ -12,12 +12,22 @@ settings drawer.
 
 ### Roster
 
-- **One roster per group**: Each group gets a roster the first time you open it, seeded from its current cast. Nothing to name, pick or delete — it follows the group, and goes when the group does.
-- **A bench, not just the cast**: The roster is the wider pool of cards for that group; membership is the subset currently in the chat.
-- **One-click membership**: Toggle any roster card in or out of the open group chat.
-- **Force a turn**: Make a specific member speak next, bypassing the activation strategy. Anything typed in the message box is posted as your user turn first, so the forced reply answers it.
+- **The cast is the group**: The panel lists the open group's members. Who is in the scene is who is unmuted: the panel's first toggle mutes and unmutes a member (SillyTavern's own mute), so SillyTavern's group panel and SideStage always agree. Muted members stay in the group but aren't picked to reply. Use the **Append** card join mode (group settings) so only unmuted members' cards reach the prompt.
+- **Force a turn**: Make a specific member speak next, bypassing the activation strategy, muted or not. Anything typed in the message box is posted as your user turn first, so the forced reply answers it.
 - **Per-group Author's Note**: Each group carries a note; a footer toggle fills the chat's Author's Note with it and clears it again. A layout can override it for one scene. The toggle is saved with the chat, so it comes back on after a refresh and follows the note if you edit it or switch layout; typing over the note by hand turns it off.
 - **Follows the chat**: Opens on group chats, closes elsewhere. The wand menu toggles it by hand.
+
+### World groups
+
+A *world* is a lorebook shared by the cards of one setting, as made by the
+Character Editor (a lorebook
+marked `extensions.character_editor.world`; its cast is every card that links
+it). SideStage can tie one group to each world:
+
+- **Members follow the world**: The group's members are exactly the world's cards. A card that joins the world joins the group, muted unless the selected layout puts it in the scene; a card that leaves the world, or any other member, leaves the group.
+- **Kept in the world**: The tie, the group's note and its layouts are stored in the world's lorebook (`extensions.sidestage`), so they travel with the world and survive it being renamed. SideStage re-reads the lorebook before each save and only replaces that key, so lore edited elsewhere is kept.
+- **Sync**: The group is brought in step when SillyTavern starts, when you open its chat, and when a card is edited or deleted in SillyTavern. Cards changed outside SillyTavern (in the Character Editor) reach it on a reload, or straight away with the ⟳ button in the panel header or the drawer.
+- **Tie, untie, create**: Extensions → SideStage → *World*: tie the group being edited to a world, untie it (its members stay; its note and layouts move back into SideStage's settings), or create a new group for a world (with the world's cards in the scene and the Append join mode) and open it.
 
 ### Greeting layouts
 
@@ -25,13 +35,13 @@ A layout is a saved answer to *how does this scene start*. Pick one from the
 panel footer; it takes hold as soon as you select it, and again every time you
 start a new chat with that group.
 
-- **Who is in the scene**: Selecting a layout rewrites the group's cast to the cards it lists, in roster order, and every new chat restores it. Toggling membership in the panel changes the cast for the chat you're in without touching the layout, so a layout stays a fixed, repeatable arrangement.
+- **Who is in the scene**: Selecting a layout unmutes the members it puts in the scene and mutes the rest, and every new chat restores it. Muting a member from the panel changes the chat you're in without touching the layout, so a layout stays a fixed, repeatable arrangement.
 - **Who opens it**: A card can be in the scene without posting a greeting, so someone can be present from the first line without speaking first.
-- **Which greeting**: Pin a card to a specific opening line instead of ST's random pick, so a scene starts the same way every time.
+- **Which greeting**: Pin a card to a specific opening line instead of ST's random pick, so a scene starts the same way every time. A pin remembers the greeting's text as well as its place, so it follows the greeting when the card's greetings are reordered.
 - **What order**: Drag cards by the grip to set who opens the scene first. Each layout keeps its own order, so two scenes with the same cast can start from different people.
 - **A narrator**: Optional scene-setting text posted ahead of every greeting — where you are, what has just happened. It reaches the prompt as narration rather than as anyone's dialogue.
 - **Per-layout Author's Note**: Optional; blank falls back to the group's.
-- **No layout**: Always available, and the default. Groups you haven't set a layout for behave exactly as they always did.
+- **No layout**: Always available, and the default. Groups you haven't set a layout for behave as they always did, except that in a world group the muted members don't greet.
 
 > [!NOTE]
 > Only **group greetings** can be pinned — not `first_mes` and not the ordinary
@@ -110,7 +120,9 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 ## 🎮 How to Use
 
 - **Open the roster**: Wand menu → **SideStage**, or let it open itself when you enter a group chat.
-- **Pick a layout**: The dropdown in the panel footer. It reshapes the cast straight away, and reopens the scene the same way on every new chat.
+- **Mute or unmute a member**: The first toggle on a card in the panel.
+- **Give a world its group**: Extensions panel → **SideStage** → *Group*: pick the world and press *New group*, or pick a group and press *Tie*.
+- **Pick a layout**: The dropdown in the panel footer. It mutes and unmutes straight away, and reopens the scene the same way on every new chat.
 - **Build a layout**: Extensions panel → **SideStage** → *Greeting layouts*. Add one, then set each card's *In scene*, *Greets* and *Greeting*, and drag the rows into the order you want the scene to open in.
 - **Rewrite a reply**: The button row above the message box. Which AI they run
   on is set in Extensions panel → **SideStage** → *Rewrite*; **Directive**,
@@ -118,7 +130,7 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 - **Open the gallery**: The gallery button in the viewer's overlay controls.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
 - **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
-  - *Roster* — choose which group you're editing; edit its Author's Note; add and remove cards.
+  - *Group* — choose which group you're editing; tie it to a world, untie it, or create a group for a world; edit its Author's Note.
   - *Greeting layouts* — add, rename and delete layouts; set the narrator, the note override, and the per-card matrix.
   - *Rewrite* — the connection profile the button row runs on, how much chat goes with an aside, and what the **Morality** and **Scene** buttons ask.
   - *Images* — *Open the viewer automatically on character select* and *Change with Greeting*.

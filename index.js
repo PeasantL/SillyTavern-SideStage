@@ -34,6 +34,8 @@ import {
     system_avatar,
     default_avatar,
     getCurrentChatId,
+    getCharacters,
+    getRequestHeaders,
     saveChatConditional,
     ensureSwipes,
     syncMesToSwipe,
@@ -51,7 +53,11 @@ import {
     editGroup,
     unshallowGroupMembers,
     select_group_chats,
+    openGroupById,
+    group_generation_mode,
+    DEFAULT_AUTO_MODE_DELAY,
 } from '../../../group-chats.js';
+import { saveWorldInfo } from '../../../world-info.js';
 import { waitUntilCondition, uuidv4, getSortableDelay } from '../../../utils.js';
 import { t } from '../../../i18n.js';
 import { Popup } from '../../../popup.js';
@@ -77,13 +83,15 @@ let focusedAvatar = null;
 
 /**
  * @typedef {object} LayoutEntry
- * @property {boolean} active Whether the card is in the group for this scene
+ * @property {boolean} active Whether the card is in the scene (unmuted) while this layout is selected
  * @property {boolean} greets Whether the card posts an opening message
  * @property {number|null} greeting Index into the card's group greetings, or null for random
+ * @property {string} [greetingKey] Fingerprint of the pinned greeting's text (see greetingKey()), so the pin
+ *     follows its greeting when the card's group greetings are reordered
  */
 
 /**
- * A way to open a scene with this group's cast. Card order is the roster's, so
+ * A way to open a scene with this group's cast. Card order is the group's, so
  * a layout only stores what varies: who is in it, who speaks, and with what.
  * @typedef {object} Layout
  * @property {string} id
@@ -91,26 +99,26 @@ let focusedAvatar = null;
  * @property {string} note Author's Note for this scene; blank falls back to the group's
  * @property {string} narrator Scene-setting text posted before the greetings; blank for none
  * @property {string[]} order Avatar file names, in the order the scene opens
- * @property {Record<string, LayoutEntry>} cards Keyed by avatar file name; absent means inactive
+ * @property {Record<string, LayoutEntry>} cards Keyed by avatar file name; absent means muted
  */
 
 /**
- * @typedef {object} Roster
- * @property {string[]} cards Avatar file names in this group's pool, in display order
+ * What SideStage keeps for one group. The cast is the group's own member list,
+ * and who is in the scene is who is unmuted, so neither is stored here.
+ *
+ * A group tied to a world keeps its stage in the world's lorebook (see the
+ * Worlds region), with `group` naming the group; any other group keeps it in
+ * the extension settings.
+ * @typedef {object} Stage
  * @property {string} note Author's Note the footer toggle fills the chat with
  * @property {Layout[]} layouts Scenes that can be opened with this cast
  * @property {string} activeLayoutId Id of the selected layout, or '' for none
+ * @property {string} [group] Id of the group, for a stage kept in a world's lorebook
  */
 
 const rosterDefaults = {
-    /** @type {Record<string, Roster>} Rosters by group id. One per group, created on demand. */
+    /** @type {Record<string, Stage>} Stages by group id, for groups not tied to a world. Created on demand. */
     groups: {},
-    /**
-     * Free-standing rosters from before rosters followed groups. Kept only so
-     * their card lists can be imported into a group, never edited in place.
-     * @type {{id: string, name: string, cards: string[], note: string}[]}
-     */
-    legacyRosters: [],
     /**
      * Connection profile the footer's rewrite actions run on, by name. Empty
      * means whatever connection is currently selected. Held by name rather than
@@ -144,11 +152,51 @@ const rosterDefaults = {
 };
 
 /**
- * Group whose roster the settings drawer edits. Empty means "follow the open
+ * Group whose stage the settings drawer edits. Empty means "follow the open
  * group", which is the state it returns to whenever the chat changes.
  * @type {string}
  */
 let settingsGroupId = '';
+
+/**
+ * Fills in whatever a stage is missing, in place.
+ * @param {object} stage
+ * @returns {Stage}
+ */
+function normalizeStage(stage) {
+    if (typeof stage.note !== 'string') {
+        stage.note = '';
+    }
+    if (!Array.isArray(stage.layouts)) {
+        stage.layouts = [];
+    }
+    if (typeof stage.activeLayoutId !== 'string') {
+        stage.activeLayoutId = '';
+    }
+
+    for (const layout of stage.layouts) {
+        if (typeof layout.note !== 'string') {
+            layout.note = '';
+        }
+        if (typeof layout.narrator !== 'string') {
+            layout.narrator = '';
+        }
+        if (!Array.isArray(layout.order)) {
+            layout.order = [];
+        }
+        if (!layout.cards || typeof layout.cards !== 'object') {
+            layout.cards = {};
+        }
+    }
+
+    // A layout deleted from another tab, or settings rolled back, must not
+    // leave the stage pointing at nothing.
+    if (!stage.layouts.some(x => x.id === stage.activeLayoutId)) {
+        stage.activeLayoutId = '';
+    }
+
+    return stage;
+}
 
 function getSettings() {
     if (!extension_settings[MODULE_NAME]) {
@@ -163,97 +211,72 @@ function getSettings() {
         }
     }
 
-    // Migration from the single flat card list this extension shipped with.
-    if (Array.isArray(settings.cards)) {
-        if (settings.cards.length) {
-            settings.legacyRosters.push({ id: uuidv4(), name: t`Default`, cards: settings.cards, note: '' });
-        }
-        delete settings.cards;
-    }
-
-    // Migration from free-standing rosters. A roster was deliberately not tied
-    // to a group, so there is nothing to bind these to without guessing; they
-    // are parked for a manual import instead of being assigned automatically.
-    if (Array.isArray(settings.rosters)) {
-        settings.legacyRosters.push(...settings.rosters.filter(x => x?.cards?.length || x?.note));
-        delete settings.rosters;
-        delete settings.activeRosterId;
-    }
-
+    // Rosters are gone: a group's cast is its member list. Drop the card lists
+    // every earlier version kept (the flat list, free-standing rosters, and the
+    // per-group bench), keeping each group's note and layouts.
+    delete settings.cards;
+    delete settings.rosters;
+    delete settings.activeRosterId;
+    delete settings.legacyRosters;
     // The Chat Completion prompt picker is gone; drop what it saved.
     delete settings.oocPrompts;
 
-    for (const roster of Object.values(settings.groups)) {
-        if (!Array.isArray(roster.cards)) {
-            roster.cards = [];
-        }
-        if (typeof roster.note !== 'string') {
-            roster.note = '';
-        }
-        if (!Array.isArray(roster.layouts)) {
-            roster.layouts = [];
-        }
-        if (typeof roster.activeLayoutId !== 'string') {
-            roster.activeLayoutId = '';
-        }
-
-        for (const layout of roster.layouts) {
-            if (typeof layout.note !== 'string') {
-                layout.note = '';
-            }
-            if (typeof layout.narrator !== 'string') {
-                layout.narrator = '';
-            }
-            if (!Array.isArray(layout.order)) {
-                layout.order = [];
-            }
-            if (!layout.cards || typeof layout.cards !== 'object') {
-                layout.cards = {};
-            }
-        }
-
-        // A layout deleted from another tab, or settings rolled back, must not
-        // leave the roster pointing at nothing.
-        if (!roster.layouts.some(x => x.id === roster.activeLayoutId)) {
-            roster.activeLayoutId = '';
-        }
+    for (const stage of Object.values(settings.groups)) {
+        delete stage.cards;
+        normalizeStage(stage);
     }
 
     return settings;
 }
 
 /**
- * The roster for one group, created on first use and seeded from that group's
- * current members so a group opens with its cast already in the panel.
+ * The stage of one group: from its world's lorebook when it is tied to one,
+ * otherwise from the settings (created on first use).
  * @param {string} [groupId]
- * @param {object} [options]
- * @param {boolean} [options.create=true] Create the roster if it doesn't exist yet
- * @returns {Roster|null}
+ * @returns {Stage|null} Null for no group, or while it isn't known yet whether the group has a world.
  */
-function getRoster(groupId, { create = true } = {}) {
-    if (!groupId) {
+function getStage(groupId) {
+    if (!groupId || !groups.some(x => x.id === groupId)) {
         return null;
+    }
+
+    const world = getGroupWorld(groupId);
+
+    if (world === null) {
+        return null;
+    }
+
+    if (world) {
+        return worldStages.get(world) ?? null;
     }
 
     const settings = getSettings();
 
-    if (!settings.groups[groupId] && create) {
-        const group = groups.find(x => x.id === groupId);
-        settings.groups[groupId] = { cards: [...(group?.members ?? [])], note: '' };
+    if (!settings.groups[groupId]) {
+        settings.groups[groupId] = normalizeStage({});
         saveSettingsDebounced();
     }
 
-    return settings.groups[groupId] ?? null;
+    return settings.groups[groupId];
 }
 
-/** @returns {Roster|null} The roster for the open group chat. */
-function getActiveRoster() {
-    return getRoster(getCurrentGroup()?.id);
+/**
+ * Saves a group's stage wherever it lives.
+ * @param {string} groupId
+ */
+function saveStage(groupId) {
+    const world = getGroupWorld(groupId);
+
+    if (world) {
+        saveWorldStageDebounced(world);
+    } else {
+        saveSettingsDebounced();
+    }
 }
 
-/** @returns {string[]} Avatar file names in the open group's roster. */
-function getActiveCards() {
-    return getActiveRoster()?.cards ?? [];
+/** @returns {Stage|null} The stage of the open group chat. */
+function getActiveStage() {
+    return getStage(getCurrentGroup()?.id);
 }
 
 /** @returns {string} Id of the group the settings drawer is editing. */
@@ -265,42 +288,48 @@ function getSettingsGroupId() {
     return getCurrentGroup()?.id ?? groups[0]?.id ?? '';
 }
 
-/** @returns {Roster|null} The roster the settings drawer edits. */
-function getSettingsRoster() {
-    return getRoster(getSettingsGroupId());
+/** @returns {object|null} The group the settings drawer edits. */
+function getSettingsGroup() {
+    return groups.find(x => x.id === getSettingsGroupId()) ?? null;
+}
+
+/** @returns {Stage|null} The stage the settings drawer edits. */
+function getSettingsStage() {
+    return getStage(getSettingsGroupId());
 }
 
 /**
- * @param {Roster|null} roster
- * @returns {Layout|null} The roster's selected layout, or null when none is.
+ * @param {Stage|null} stage
+ * @returns {Layout|null} The stage's selected layout, or null when none is.
  */
-function getActiveLayout(roster) {
-    return roster?.layouts.find(x => x.id === roster.activeLayoutId) ?? null;
+function getActiveLayout(stage) {
+    return stage?.layouts.find(x => x.id === stage.activeLayoutId) ?? null;
 }
 
 /**
- * The roster's cards in the order this layout opens with.
+ * The group's members in the order this layout opens with.
  *
- * Stored as a plain list of avatars and reconciled against the roster on every
- * read, so cards removed from the roster fall out and cards added to it appear
- * at the end. That means an unsorted layout, or one whose roster has grown,
- * still has a complete order without anything having to write one out.
- * @param {Roster} roster
+ * Stored as a plain list of avatars and reconciled against the members on
+ * every read, so cards that left the group fall out and cards that joined it
+ * appear at the end. That means an unsorted layout, or one whose group has
+ * grown, still has a complete order without anything having to write one out.
+ * @param {object|null} group
  * @param {Layout} layout
  * @returns {string[]}
  */
-function getLayoutOrder(roster, layout) {
-    const inRoster = new Set(roster.cards);
-    const ordered = layout.order.filter(avatar => inRoster.has(avatar));
+function getLayoutOrder(group, layout) {
+    const members = Array.isArray(group?.members) ? group.members : [];
+    const inGroup = new Set(members);
+    const ordered = layout.order.filter(avatar => inGroup.has(avatar));
     const placed = new Set(ordered);
 
-    return [...ordered, ...roster.cards.filter(avatar => !placed.has(avatar))];
+    return [...ordered, ...members.filter(avatar => !placed.has(avatar))];
 }
 
 /**
- * A card's settings within a layout. Cards added to the roster after the layout
- * was built are absent, and default to sitting the scene out, so growing the
- * roster never quietly rewrites an existing scene.
+ * A card's settings within a layout. Cards that joined the group after the
+ * layout was built are absent, and default to sitting the scene out, so a
+ * growing cast never quietly rewrites an existing scene.
  * @param {Layout} layout
  * @param {string} avatar
  * @returns {LayoutEntry}
@@ -311,11 +340,12 @@ function getLayoutEntry(layout, avatar) {
 
 /**
  * Writes part of a card's layout entry back, creating it if needed.
+ * @param {string} groupId Group whose stage holds the layout
  * @param {Layout} layout
  * @param {string} avatar
  * @param {Partial<LayoutEntry>} patch
  */
-function setLayoutEntry(layout, avatar, patch) {
+function setLayoutEntry(groupId, layout, avatar, patch) {
     const entry = Object.assign(getLayoutEntry(layout, avatar), patch);
 
     // Speaking, and which greeting to speak, only mean anything for a card that
@@ -325,8 +355,55 @@ function setLayoutEntry(layout, avatar, patch) {
         entry.greeting = null;
     }
 
+    if (!Number.isInteger(entry.greeting)) {
+        delete entry.greetingKey;
+    }
+
     layout.cards[avatar] = entry;
-    saveSettingsDebounced();
+    saveStage(groupId);
+}
+
+/**
+ * A short fingerprint of a greeting: FNV-1a (32-bit, hex) over its code points,
+ * with runs of whitespace collapsed to one space and the ends trimmed. Kept
+ * beside a pin's index so the pin can find its greeting again after the card's
+ * greetings are reordered; other tools that move greetings can compute the
+ * same value to keep pins in step.
+ * @param {string} text
+ * @returns {string}
+ */
+function greetingKey(text) {
+    let hash = 0x811c9dc5;
+
+    for (const char of String(text ?? '').replace(/\s+/g, ' ').trim()) {
+        hash ^= char.codePointAt(0);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+
+    return hash.toString(16).padStart(8, '0');
+}
+
+/**
+ * Where a pinned greeting is in a card's pool now: found by its fingerprint,
+ * else by its stored index (the text was edited), else nowhere.
+ * @param {LayoutEntry} entry
+ * @param {string[]} pool
+ * @returns {number|null}
+ */
+function resolvePin(entry, pool) {
+    if (!Number.isInteger(entry.greeting)) {
+        return null;
+    }
+
+    if (entry.greetingKey) {
+        const index = pool.findIndex(x => greetingKey(x) === entry.greetingKey);
+
+        if (index !== -1) {
+            return index;
+        }
+    }
+
+    return entry.greeting < pool.length ? entry.greeting : null;
 }
 
 /**
@@ -362,12 +439,12 @@ function getGroupGreetings(character) {
 }
 
 /**
- * Drops rosters whose group is gone. There is no group-deleted event — only
+ * Drops stages whose group is gone. There is no group-deleted event — only
  * GROUP_CHAT_DELETED — so this sweeps once the group list is known rather than
  * reacting to the deletion itself. Bails while the list is empty, since that is
  * indistinguishable from it not having loaded yet.
  */
-function pruneOrphanRosters() {
+function pruneOrphanStages() {
     if (!groups.length) {
         return;
     }
@@ -386,6 +463,507 @@ function pruneOrphanRosters() {
         saveSettingsDebounced();
     }
 }
+
+// #region Worlds
+
+/**
+ * Groups tied to a world.
+ *
+ * A world is a lorebook the Character Editor has marked as one
+ * (extensions.character_editor.world). Its cast is every card that links it
+ * (data.extensions.world), and the group tied to it has exactly that cast as
+ * members: cards join and leave the group as they join and leave the world,
+ * and who is in the scene is who is unmuted.
+ *
+ * The tie and the group's stage live in the lorebook, under
+ * extensions.sidestage ({group, note, activeLayoutId, layouts}), so they travel
+ * with the world and survive the editor renaming it; the group file only ever
+ * holds ST's own fields. One group per world.
+ *
+ * Cards changed outside ST (the editor) reach ST's character list on a reload;
+ * the sync button reloads it without one.
+ */
+const WORLD_KEY = 'sidestage';
+const WORLD_SAVE_DELAY = 1000;
+
+/** Group id -> the name of its world's lorebook, or '' for a group not tied to one. */
+const groupWorlds = new Map();
+/** World lorebook name -> the stage kept in it, for worlds tied to a group. */
+const worldStages = new Map();
+/** World lorebook name -> id of the group tied to it ('' for none), for every world any card links. */
+const worldLorebooks = new Map();
+/** Whether resolveWorlds() has run, so a group missing from groupWorlds is known to have no world. */
+let worldsResolved = false;
+
+/**
+ * The world a group is tied to.
+ * @param {string} groupId
+ * @returns {string|null} The world's lorebook name, '' for none, or null while that isn't known yet.
+ */
+function getGroupWorld(groupId) {
+    if (groupWorlds.has(groupId)) {
+        return groupWorlds.get(groupId);
+    }
+
+    return worldsResolved ? '' : null;
+}
+
+/** @returns {string} The lorebook a character links, or ''. */
+function getCharacterWorld(character) {
+    return String(character?.data?.extensions?.world ?? '');
+}
+
+/**
+ * The cards of a world, in character-list order.
+ * @param {string} world
+ * @returns {string[]} Avatar file names
+ */
+function getWorldCast(world) {
+    return characters.filter(x => world && getCharacterWorld(x) === world).map(x => x.avatar);
+}
+
+/**
+ * Reads a lorebook straight from the server. Deliberately not loadWorldInfo():
+ * ST caches lorebooks for the whole session, and a world edited in the
+ * Character Editor since then would be read stale — and then written back
+ * stale over the editor's changes.
+ * @param {string} name
+ * @returns {Promise<object|null>}
+ */
+async function fetchWorld(name) {
+    const response = await fetch('/api/worldinfo/get', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ name }),
+    });
+
+    if (!response.ok) {
+        return null;
+    }
+
+    const data = await response.json();
+    return data && typeof data === 'object' && data.entries ? data : null;
+}
+
+/** @returns {boolean} Whether a lorebook is marked as a world by the Character Editor. */
+function isWorldLorebook(data) {
+    return Boolean(data?.extensions?.character_editor?.world);
+}
+
+/**
+ * Writes a world's stage into its lorebook, or removes it when the world no
+ * longer has one. Re-reads the file first and replaces only extensions.sidestage,
+ * so entries and anything else edited elsewhere in the meantime are kept.
+ * @param {string} world
+ */
+async function writeWorldStage(world) {
+    const data = await fetchWorld(world);
+
+    if (!data) {
+        throw new Error(t`The lorebook "${world}" could not be read.`);
+    }
+
+    const extensions = data.extensions && typeof data.extensions === 'object' ? data.extensions : {};
+    const stage = worldStages.get(world);
+
+    if (stage) {
+        extensions[WORLD_KEY] = structuredClone(stage);
+    } else {
+        delete extensions[WORLD_KEY];
+    }
+
+    if (Object.keys(extensions).length) {
+        data.extensions = extensions;
+    } else {
+        delete data.extensions;
+    }
+
+    await saveWorldInfo(world, data, true);
+}
+
+/** World name -> pending save timer. */
+const pendingWorldSaves = new Map();
+
+/** Saves a world's stage shortly, so typing in the drawer doesn't write the lorebook on every key. */
+function saveWorldStageDebounced(world) {
+    clearTimeout(pendingWorldSaves.get(world));
+    pendingWorldSaves.set(world, setTimeout(() => flushWorldSave(world), WORLD_SAVE_DELAY));
+}
+
+/** Writes a world's pending save now. */
+async function flushWorldSave(world) {
+    if (!pendingWorldSaves.has(world)) {
+        return;
+    }
+
+    clearTimeout(pendingWorldSaves.get(world));
+    pendingWorldSaves.delete(world);
+
+    try {
+        await writeWorldStage(world);
+    } catch (error) {
+        console.error('[SideStage] Could not save the stage to the world', error);
+        toastr.error(error?.message || t`Unknown error`, t`Could not save to the world "${world}"`);
+    }
+}
+
+/** Writes every pending world save now, so nothing in memory is newer than the files. */
+async function flushWorldSaves() {
+    await Promise.all([...pendingWorldSaves.keys()].map(flushWorldSave));
+}
+
+/**
+ * Works out which group each world is tied to, from the lorebooks the cards
+ * link. Only those can be worlds with a cast; a world nobody links has no
+ * cast and so no group to fill.
+ */
+async function resolveWorlds() {
+    await flushWorldSaves();
+
+    const names = [...new Set(characters.map(getCharacterWorld).filter(Boolean))];
+    const stages = new Map();
+    const lorebooks = new Map();
+    const owners = new Map();
+
+    for (const name of names) {
+        let data = null;
+
+        try {
+            data = await fetchWorld(name);
+        } catch (error) {
+            console.warn('[SideStage] Could not read the lorebook', name, error);
+        }
+
+        if (!isWorldLorebook(data)) {
+            continue;
+        }
+
+        const stage = data.extensions[WORLD_KEY];
+        const groupId = stage && typeof stage === 'object' ? String(stage.group ?? '') : '';
+        // A world whose group has been deleted keeps its layouts for the next
+        // group tied to it, but counts as having no group.
+        const owned = groupId && groups.some(x => x.id === groupId) && !owners.has(groupId);
+
+        lorebooks.set(name, owned ? groupId : '');
+
+        if (owned) {
+            owners.set(groupId, name);
+            stages.set(name, normalizeStage(stage));
+        }
+    }
+
+    worldStages.clear();
+    stages.forEach((stage, name) => worldStages.set(name, stage));
+    worldLorebooks.clear();
+    lorebooks.forEach((owner, name) => worldLorebooks.set(name, owner));
+    groupWorlds.clear();
+
+    for (const group of groups) {
+        groupWorlds.set(group.id, owners.get(group.id) ?? '');
+    }
+
+    worldsResolved = true;
+}
+
+/**
+ * Brings a world group's members in step with its world: cards of the world
+ * that aren't members join (muted, unless the selected layout puts them in the
+ * scene), and members that aren't in the world leave.
+ * @param {string} groupId
+ * @returns {Promise<boolean>} Whether the group was changed
+ */
+async function syncWorldGroup(groupId) {
+    const world = getGroupWorld(groupId);
+    const group = groups.find(x => x.id === groupId);
+
+    if (!world || !group) {
+        return false;
+    }
+
+    const cast = getWorldCast(world);
+
+    // Never empty a group: with no cast at all, either the characters haven't
+    // loaded or every card left the world, and neither is worth a wiped group.
+    if (!cast.length) {
+        return false;
+    }
+
+    const members = Array.isArray(group.members) ? group.members : [];
+    const muted = Array.isArray(group.disabled_members) ? group.disabled_members : [];
+    const kept = members.filter(avatar => cast.includes(avatar));
+    const joined = cast.filter(avatar => !kept.includes(avatar));
+    const nextMembers = [...kept, ...joined];
+    const layout = getActiveLayout(getStage(groupId));
+    const nextMuted = [
+        ...muted.filter(avatar => kept.includes(avatar)),
+        ...joined.filter(avatar => !(layout && getLayoutEntry(layout, avatar).active)),
+    ];
+
+    const sameMembers = nextMembers.length === members.length && nextMembers.every((x, i) => members[i] === x);
+    const sameMuted = nextMuted.length === muted.length && nextMuted.every(x => muted.includes(x));
+
+    if (sameMembers && sameMuted) {
+        return false;
+    }
+
+    group.members = nextMembers;
+    group.disabled_members = nextMuted;
+
+    await editGroup(groupId, true, false);
+    refreshGroupControlPanel();
+    await eventSource.emit(event_types.GROUP_UPDATED);
+    return true;
+}
+
+/** Syncs every group tied to a world. */
+async function syncWorldGroups() {
+    for (const [groupId, world] of groupWorlds) {
+        if (world) {
+            await syncWorldGroup(groupId);
+        }
+    }
+}
+
+let refreshingWorlds = null;
+
+/**
+ * Re-reads which groups belong to which worlds and brings their members in
+ * step. With `reload`, first reloads ST's characters and groups from disk, so
+ * cards changed in the Character Editor since ST loaded are seen without
+ * reloading the page.
+ * @param {{reload?: boolean}} [options]
+ */
+function refreshWorlds({ reload = false } = {}) {
+    if (refreshingWorlds) {
+        return refreshingWorlds;
+    }
+
+    refreshingWorlds = (async () => {
+        try {
+            if (reload) {
+                await waitUntilCondition(() => !isGenerating(), 30000, 200);
+                await getCharacters();
+            }
+
+            await resolveWorlds();
+            await syncWorldGroups();
+        } catch (error) {
+            console.error('[SideStage] Could not sync the world groups', error);
+            toastr.error(error?.message || t`Unknown error`, t`Could not sync the world groups`);
+        } finally {
+            refreshingWorlds = null;
+            renderSettings();
+            refreshPanel();
+        }
+    })();
+
+    return refreshingWorlds;
+}
+
+/** Syncs the world groups shortly after a card changed in ST, once per burst of changes. */
+const syncWorldGroupsSoon = debounce(() => {
+    if (worldsResolved && !refreshingWorlds) {
+        syncWorldGroups().catch(error => console.error('[SideStage] Could not sync the world groups', error));
+    }
+}, 500);
+
+/**
+ * Ties a group to a world. Its stage moves into the world's lorebook (merged
+ * with layouts the world kept from an earlier group), and its members are
+ * brought in step with the world's cast.
+ * @param {string} groupId
+ * @param {string} world
+ * @param {{confirm?: boolean}} [options]
+ * @returns {Promise<boolean>} Whether the group was tied
+ */
+async function linkGroupToWorld(groupId, world, { confirm = true } = {}) {
+    const group = groups.find(x => x.id === groupId);
+
+    if (!group || !world) {
+        return false;
+    }
+
+    const owner = worldLorebooks.get(world);
+
+    if (owner && owner !== groupId) {
+        const name = groups.find(x => x.id === owner)?.name ?? owner;
+        toastr.warning(t`"${world}" already has a group: ${name}.`);
+        return false;
+    }
+
+    const cast = getWorldCast(world);
+
+    if (!cast.length) {
+        toastr.warning(t`No card links "${world}", so it has no cast.`);
+        return false;
+    }
+
+    const leaving = (group.members ?? []).filter(avatar => !cast.includes(avatar));
+
+    if (confirm) {
+        const names = leaving.map(avatar => getCharacterByAvatar(avatar)?.name ?? avatar).join(', ');
+        const message = t`From now on this group's members are the cards of "${world}": they join and leave with the world, and the panel mutes and unmutes them.`
+            + (leaving.length ? ' ' + t`Leaving the group, as they aren't in the world: ${names}.` : '');
+
+        if (!(await Popup.show.confirm(t`Tie "${group.name}" to "${world}"?`, message))) {
+            return false;
+        }
+    }
+
+    await flushWorldSaves();
+
+    const data = await fetchWorld(world);
+
+    if (!isWorldLorebook(data)) {
+        toastr.error(t`"${world}" is not a world (or could not be read).`);
+        return false;
+    }
+
+    const settings = getSettings();
+    const kept = data.extensions[WORLD_KEY];
+    const stage = normalizeStage(kept && typeof kept === 'object' ? kept : {});
+    const own = settings.groups[groupId];
+
+    if (own) {
+        // The group's own layouts come along, after any the world kept.
+        stage.layouts.push(...own.layouts.filter(x => !stage.layouts.some(y => y.id === x.id)));
+        stage.note = stage.note || own.note;
+        stage.activeLayoutId = own.activeLayoutId || stage.activeLayoutId;
+    }
+
+    stage.group = groupId;
+    worldStages.set(world, stage);
+    worldLorebooks.set(world, groupId);
+    groupWorlds.set(groupId, world);
+
+    try {
+        await writeWorldStage(world);
+    } catch (error) {
+        worldStages.delete(world);
+        worldLorebooks.set(world, '');
+        groupWorlds.set(groupId, '');
+        throw error;
+    }
+
+    delete settings.groups[groupId];
+    saveSettingsDebounced();
+    await syncWorldGroup(groupId);
+    syncNoteToChat();
+    return true;
+}
+
+/**
+ * Unties a group from its world. Its stage moves back into the settings and
+ * out of the lorebook; its members stay as they are.
+ * @param {string} groupId
+ */
+async function unlinkGroupFromWorld(groupId) {
+    const world = getGroupWorld(groupId);
+
+    if (!world) {
+        return;
+    }
+
+    clearTimeout(pendingWorldSaves.get(world));
+    pendingWorldSaves.delete(world);
+
+    const stage = worldStages.get(world);
+    const settings = getSettings();
+    settings.groups[groupId] = normalizeStage({
+        note: stage?.note, layouts: stage?.layouts, activeLayoutId: stage?.activeLayoutId,
+    });
+    saveSettingsDebounced();
+
+    worldStages.delete(world);
+    worldLorebooks.set(world, '');
+    groupWorlds.set(groupId, '');
+    await writeWorldStage(world);
+}
+
+/**
+ * Creates a group for a world, with the world's whole cast in the scene, ties
+ * it to the world and opens it. Members' cards are joined (Append) rather than
+ * swapped, so the scene's card text is the unmuted members'.
+ * @param {string} world
+ */
+async function createWorldGroup(world) {
+    const cast = getWorldCast(world);
+
+    if (!cast.length) {
+        toastr.warning(t`No card links "${world}", so it has no cast.`);
+        return;
+    }
+
+    if (worldLorebooks.get(world)) {
+        toastr.warning(t`"${world}" already has a group.`);
+        return;
+    }
+
+    const response = await fetch('/api/groups/create', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            name: world,
+            members: cast,
+            disabled_members: [],
+            avatar_url: default_avatar,
+            allow_self_responses: false,
+            activation_strategy: 0,
+            generation_mode: group_generation_mode.APPEND,
+            auto_mode_delay: DEFAULT_AUTO_MODE_DELAY,
+        }),
+    });
+
+    if (!response.ok) {
+        throw new Error(t`SillyTavern could not create the group.`);
+    }
+
+    const created = await response.json();
+    // Reloads the groups too, which is how the new one reaches the group list.
+    await getCharacters();
+    groupWorlds.set(created.id, '');
+    await linkGroupToWorld(created.id, world, { confirm: false });
+    await openGroupById(created.id);
+}
+
+/**
+ * Follows a card renamed in ST (which renames its file) in every layout.
+ * ST itself fixes the group member lists.
+ * @param {string} oldAvatar
+ * @param {string} newAvatar
+ */
+function renameInStages(oldAvatar, newAvatar) {
+    /** @param {Stage} stage */
+    const rename = (stage) => {
+        let changed = false;
+
+        for (const layout of stage.layouts) {
+            if (layout.cards[oldAvatar]) {
+                layout.cards[newAvatar] = layout.cards[oldAvatar];
+                delete layout.cards[oldAvatar];
+                changed = true;
+            }
+            if (layout.order.includes(oldAvatar)) {
+                layout.order = layout.order.map(x => x === oldAvatar ? newAvatar : x);
+                changed = true;
+            }
+        }
+
+        return changed;
+    };
+
+    if (Object.values(getSettings().groups).map(rename).some(Boolean)) {
+        saveSettingsDebounced();
+    }
+
+    for (const [world, stage] of worldStages) {
+        if (rename(stage)) {
+            saveWorldStageDebounced(world);
+        }
+    }
+}
+
+// #endregion
 
 /** @returns {object|null} The currently open group, or null if not in a group chat. */
 function getCurrentGroup() {
@@ -424,12 +1002,14 @@ function refreshGroupControlPanel() {
 }
 
 /**
- * Adds or removes a character from the currently open group chat.
+ * Mutes or unmutes a member of the open group chat. Muted members stay in the
+ * group (and in its prompt as far as the group's settings say) but aren't
+ * picked to reply; a forced turn still reaches them.
  * @param {string} avatar Avatar file name of the character
- * @param {boolean} shouldBeMember Target state: true = in the group, false = out
+ * @param {boolean} shouldMute Target state: true = muted, false = in the scene
  * @returns {Promise<boolean>} Whether the group was actually changed
  */
-async function setMembership(avatar, shouldBeMember) {
+async function setMuted(avatar, shouldMute) {
     const group = getCurrentGroup();
 
     if (!group || !Array.isArray(group.members)) {
@@ -437,33 +1017,27 @@ async function setMembership(avatar, shouldBeMember) {
         return false;
     }
 
-    if (!getCharacterByAvatar(avatar)) {
-        toastr.error(t`Character not found: ${avatar}`);
+    if (!group.members.includes(avatar)) {
         return false;
     }
 
-    const index = group.members.indexOf(avatar);
-
-    if (shouldBeMember) {
-        if (index !== -1) {
-            return false;
-        }
-        group.members.push(avatar);
-    } else {
-        if (index === -1) {
-            return false;
-        }
-        group.members.splice(index, 1);
-        // Don't leave a stale mute behind for a character that is no longer a member
-        if (Array.isArray(group.disabled_members)) {
-            const disabledIndex = group.disabled_members.indexOf(avatar);
-            if (disabledIndex !== -1) {
-                group.disabled_members.splice(disabledIndex, 1);
-            }
-        }
+    if (!Array.isArray(group.disabled_members)) {
+        group.disabled_members = [];
     }
 
-    // immediately = true so the member list is on disk before anything can generate,
+    const index = group.disabled_members.indexOf(avatar);
+
+    if (shouldMute === (index !== -1)) {
+        return false;
+    }
+
+    if (shouldMute) {
+        group.disabled_members.push(avatar);
+    } else {
+        group.disabled_members.splice(index, 1);
+    }
+
+    // immediately = true so the mute is on disk before anything can generate,
     // reload = false so the character list / group panel isn't torn down under us.
     await editGroup(selected_group, true, false);
     refreshGroupControlPanel();
@@ -472,39 +1046,32 @@ async function setMembership(avatar, shouldBeMember) {
 }
 
 /**
- * Rewrites the open group's member list to the selected layout's cast.
- *
- * Written in the layout's own order, because greetings are posted in member
- * order: dragging a card up the matrix is what moves it earlier in the scene.
+ * Mutes the open group's members as the selected layout says: whoever is in
+ * the scene is unmuted, everyone else is muted. Members are never added or
+ * removed here.
  * @returns {Promise<boolean>} Whether the group was actually changed
  */
-async function applyLayoutMembership() {
+async function applyLayoutMutes() {
     const group = getCurrentGroup();
-    const roster = getActiveRoster();
-    const layout = getActiveLayout(roster);
+    const layout = getActiveLayout(getActiveStage());
 
     if (!group || !Array.isArray(group.members) || !layout) {
         return false;
     }
 
-    if (!isLayoutUsable(roster, layout)) {
+    if (!isLayoutUsable(group, layout)) {
         toastr.warning(t`"${layout.name}" has nobody in the scene, so the group was left as it is.`);
         return false;
     }
 
-    const wanted = getLayoutOrder(roster, layout).filter(avatar =>
-        getLayoutEntry(layout, avatar).active && getCharacterByAvatar(avatar));
+    const wanted = group.members.filter(avatar => !getLayoutEntry(layout, avatar).active);
+    const muted = Array.isArray(group.disabled_members) ? group.disabled_members : [];
 
-    if (wanted.length === group.members.length && wanted.every((x, i) => group.members[i] === x)) {
+    if (wanted.length === muted.length && wanted.every(x => muted.includes(x))) {
         return false;
     }
 
-    group.members = wanted;
-
-    // Don't leave a stale mute behind for a character that is no longer a member
-    if (Array.isArray(group.disabled_members)) {
-        group.disabled_members = group.disabled_members.filter(x => wanted.includes(x));
-    }
+    group.disabled_members = wanted;
 
     await editGroup(group.id, true, false);
     refreshGroupControlPanel();
@@ -516,12 +1083,12 @@ async function applyLayoutMembership() {
  * Whether a layout can be applied at all. An empty one reads as unfinished
  * rather than as an instruction to open an empty scene, so it is left alone
  * and the group behaves as though no layout were selected.
- * @param {Roster|null} roster
+ * @param {object|null} group
  * @param {Layout|null} layout
  * @returns {boolean}
  */
-function isLayoutUsable(roster, layout) {
-    return Boolean(roster && layout && roster.cards.some(avatar =>
+function isLayoutUsable(group, layout) {
+    return Boolean(group && layout && (group.members ?? []).some(avatar =>
         getLayoutEntry(layout, avatar).active && getCharacterByAvatar(avatar)));
 }
 
@@ -553,11 +1120,20 @@ let capturedGreetings = { chatId: '', texts: new Map() };
  * @param {{input: string, output: string, character: object}} args
  */
 function applyLayoutGreeting(args) {
-    const roster = getActiveRoster();
-    const layout = getActiveLayout(roster);
+    const group = getCurrentGroup();
+    const layout = getActiveLayout(getActiveStage());
     const avatar = args?.character?.avatar;
 
-    if (!avatar || !isLayoutUsable(roster, layout)) {
+    if (!avatar || !group) {
+        return;
+    }
+
+    if (!isLayoutUsable(group, layout)) {
+        // A world group's mutes are its scene, so with no layout the muted sit
+        // the opening out too, where stock ST greets with every member.
+        if (getGroupWorld(group.id) && group.disabled_members?.includes(avatar)) {
+            args.output = ' ';
+        }
         return;
     }
 
@@ -587,17 +1163,19 @@ function getOpeningLine(layout, character, captured) {
     const entry = getLayoutEntry(layout, character.avatar);
     const pool = getGroupGreetings(character);
 
-    if (Number.isInteger(entry.greeting) && pool[entry.greeting]) {
-        return pool[entry.greeting];
+    const pinned = resolvePin(entry, pool);
+
+    if (pinned !== null) {
+        return pool[pinned];
     }
 
     if (captured.has(character.avatar)) {
         return captured.get(character.avatar);
     }
 
-    // Never reached the greeting loop, so nothing chose for it: the character
-    // wasn't a member when the chat was built and the layout is bringing it
-    // back. Mirror what ST and Extension-GroupGreetings would have done.
+    // Never reached the greeting loop, so nothing chose for it (the character
+    // joined after the chat was built). Mirror what ST and
+    // Extension-GroupGreetings would have done.
     const options = pool.length
         ? pool
         : [character.first_mes, ...(character.data?.alternate_greetings ?? [])].filter(x => x);
@@ -668,45 +1246,39 @@ function buildNarratorMessage(layout) {
  *
  * Runs on GROUP_CHAT_CREATED, once the greeting loop has finished and left the
  * chat empty. Doing the whole opening here rather than steering the loop is
- * what lets the layout bring back a character the group had lost: the loop only
- * ever visits current members, so a character the layout wants but the cast is
- * missing can only be given a greeting after the fact. Membership and greetings
- * then land together, in one chat reset.
+ * what puts the greetings in the layout's order (the loop walks the member
+ * list) and lets a card that joined since the chat was built greet too. The
+ * mutes are applied first, so the scene and its greetings land together.
  * @returns {Promise<void>}
  */
 async function openSceneFromLayout() {
-    const roster = getActiveRoster();
-    const layout = getActiveLayout(roster);
+    const group = getCurrentGroup();
+    const layout = getActiveLayout(getActiveStage());
 
     const captured = capturedGreetings.chatId === String(getCurrentChatId() ?? '')
         ? capturedGreetings.texts
         : new Map();
     capturedGreetings = { chatId: '', texts: new Map() };
 
-    if (!isLayoutUsable(roster, layout)) {
+    if (!isLayoutUsable(group, layout)) {
         return;
     }
 
     try {
-        await applyLayoutMembership();
+        await applyLayoutMutes();
     } catch (error) {
         console.error('[SideStage] Failed to apply the layout to the group', error);
         toastr.error(error?.message || t`Unknown error`, t`Failed to apply the layout`);
         return;
     }
 
-    const group = getCurrentGroup();
-
-    if (!group) {
-        return;
-    }
-
     const messages = [buildNarratorMessage(layout)];
 
-    for (const avatar of group.members) {
+    for (const avatar of getLayoutOrder(group, layout)) {
         const character = getCharacterByAvatar(avatar);
+        const entry = getLayoutEntry(layout, avatar);
 
-        if (!character || !getLayoutEntry(layout, avatar).greets) {
+        if (!character || !entry.active || !entry.greets) {
             continue;
         }
 
@@ -833,8 +1405,8 @@ function setChatAuthorsNote(text) {
  * @returns {string}
  */
 function getEffectiveNote() {
-    const roster = getActiveRoster();
-    return getActiveLayout(roster)?.note || roster?.note || '';
+    const stage = getActiveStage();
+    return getActiveLayout(stage)?.note || stage?.note || '';
 }
 
 /**
@@ -1911,10 +2483,11 @@ function closePanel() {
 function makeCardRow(avatar) {
     const character = getCharacterByAvatar(avatar);
     const group = getCurrentGroup();
-    const isMember = Boolean(group?.members?.includes(avatar));
+    const isMuted = Boolean(group?.disabled_members?.includes(avatar));
 
     const row = document.createElement('div');
     row.classList.add('gr-card');
+    row.classList.toggle('gr-muted', isMuted);
     row.dataset.avatar = avatar;
 
     const thumb = document.createElement('img');
@@ -1977,17 +2550,19 @@ function makeCardRow(avatar) {
         return { label, input };
     }
 
-    // Toggle 1: membership in the current group
-    const member = makeIconToggle('gr-member', 'fa-user-check', t`Add to / remove from the current group chat`);
-    member.input.checked = isMember;
+    // Toggle 1: in the scene (unmuted) or muted
+    const member = makeIconToggle('gr-member', 'fa-user-check', isMuted
+        ? t`Muted: not picked to reply. Click to bring into the scene`
+        : t`In the scene. Click to mute`);
+    member.input.checked = !isMuted;
     member.input.disabled = !group || !character;
     member.input.addEventListener('change', async () => {
-        const wanted = member.input.checked;
+        const inScene = member.input.checked;
         member.input.disabled = true;
         try {
-            const changed = await setMembership(avatar, wanted);
+            const changed = await setMuted(avatar, !inScene);
             if (!changed) {
-                member.input.checked = !wanted;
+                member.input.checked = !inScene;
             }
         } finally {
             member.input.disabled = false;
@@ -1996,9 +2571,10 @@ function makeCardRow(avatar) {
     });
     row.appendChild(member.label);
 
-    // Toggle 2: force a turn (self-resets once generation finishes)
+    // Toggle 2: force a turn (self-resets once generation finishes). Works for
+    // muted members too: a muted character can still be given one line.
     const turn = makeIconToggle('gr-turn', 'fa-comment-dots', t`Make this character speak next`);
-    turn.input.disabled = !isMember;
+    turn.input.disabled = !group || !character;
     turn.input.addEventListener('change', async () => {
         if (!turn.input.checked) {
             return;
@@ -2025,19 +2601,19 @@ function makeCardRow(avatar) {
  * @param {string} id
  */
 async function setActiveLayout(id) {
-    const roster = getActiveRoster();
+    const stage = getActiveStage();
 
-    if (!roster) {
+    if (!stage) {
         return;
     }
 
-    roster.activeLayoutId = String(id);
-    saveSettingsDebounced();
+    stage.activeLayoutId = String(id);
+    saveStage(getCurrentGroup().id);
     // The new layout may override the group's note, or stop overriding it.
     syncNoteToChat();
 
     try {
-        await applyLayoutMembership();
+        await applyLayoutMutes();
     } catch (error) {
         console.error('[SideStage] Failed to apply the layout', error);
         toastr.error(error?.message || t`Unknown error`, t`Failed to apply the layout`);
@@ -2060,8 +2636,8 @@ function refreshLayoutPicker() {
         return;
     }
 
-    const roster = getActiveRoster();
-    const layouts = roster?.layouts ?? [];
+    const stage = getActiveStage();
+    const layouts = stage?.layouts ?? [];
     const signature = [getCurrentGroup()?.id ?? '', ...layouts.map(x => `${x.id}:${x.name}`)].join('\u0000');
 
     if (picker.dataset.signature !== signature) {
@@ -2081,8 +2657,8 @@ function refreshLayoutPicker() {
         }
     }
 
-    picker.value = roster?.activeLayoutId ?? '';
-    picker.disabled = !roster;
+    picker.value = stage?.activeLayoutId ?? '';
+    picker.disabled = !stage;
 }
 
 /** Re-renders the card list inside an already open panel. */
@@ -2092,14 +2668,22 @@ function refreshPanel() {
         return;
     }
 
-    const cards = getActiveCards();
+    const group = getCurrentGroup();
+    const world = group ? getGroupWorld(group.id) : '';
+    const cards = group?.members ?? [];
     list.innerHTML = '';
 
     const status = document.getElementById('groupRosterStatus');
     if (status) {
-        const group = getCurrentGroup();
         status.textContent = group ? group.name : t`No group chat open`;
+        status.title = world ? t`Members follow the world "${world}"` : '';
         status.classList.toggle('gr-warning', !group);
+    }
+
+    const sync = document.getElementById('groupRosterSync');
+    if (sync) {
+        sync.style.display = world ? '' : 'none';
+        sync.title = t`Reload the characters and bring this group in step with "${world}"`;
     }
 
     const noteToggle = /** @type {HTMLInputElement} */ (document.querySelector('#groupRosterNoteToggle input'));
@@ -2113,7 +2697,7 @@ function refreshPanel() {
     if (!cards.length) {
         const empty = document.createElement('div');
         empty.classList.add('gr-empty');
-        empty.textContent = t`No cards in this group's roster. Add them in Extensions → SideStage.`;
+        empty.textContent = group ? t`This group has no members.` : t`Open a group chat.`;
         list.appendChild(empty);
         return;
     }
@@ -2141,6 +2725,7 @@ function openPanel() {
         <div id="${PANEL_ID}" class="gr-window ss-dock">
             <div class="gr-header">
                 <span class="gr-title">${t`SideStage`}<small id="groupRosterStatus" class="gr-status"></small></span>
+                <div id="groupRosterSync" class="gr-header-btn fa-solid fa-rotate fa-fw interactable" tabindex="0"></div>
             </div>
             <div class="gr-body">
                 <div id="groupRosterList" class="gr-grid"></div>
@@ -2159,6 +2744,15 @@ function openPanel() {
 
     $('body').append(html);
     const $win = $(`#${PANEL_ID}`);
+
+    $win.find('#groupRosterSync').on('click keydown', function (e) {
+        if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') {
+            return;
+        }
+        e.preventDefault();
+        $(this).addClass('fa-spin');
+        refreshWorlds({ reload: true }).finally(() => $('#groupRosterSync').removeClass('fa-spin'));
+    });
 
     $win.find('#groupRosterNoteToggle input').on('change', function () {
         setNoteApplied(this.checked);
@@ -2188,36 +2782,23 @@ const settingsHtml = `
         </div>
         <div class="inline-drawer-content">
             <div class="ss-settings-section">
-                <div class="ss-settings-heading">Roster</div>
+                <div class="ss-settings-heading">Group</div>
                 <label for="gr_group_select">Group</label>
                 <select id="gr_group_select" class="text_pole"></select>
-                <div id="gr_legacy_block">
-                    <label for="gr_legacy_select">Leftover rosters (from before rosters followed groups)</label>
-                    <div class="flex-container alignItemsCenter">
-                        <select id="gr_legacy_select" class="text_pole flex1"></select>
-                        <div id="gr_legacy_import" class="menu_button interactable gr-flat-button" title="Add this roster's cards to the group above">Import</div>
-                        <div id="gr_legacy_discard" class="menu_button menu_button_icon interactable" title="Discard every leftover roster">
-                            <i class="fa-solid fa-trash fa-fw"></i>
-                        </div>
+                <small id="gr_world_status" class="ss-settings-hint"></small>
+                <label for="gr_world_select">World</label>
+                <div class="flex-container alignItemsCenter">
+                    <select id="gr_world_select" class="text_pole flex1"></select>
+                    <div id="gr_world_link" class="menu_button interactable gr-flat-button" title="Tie the group above to this world: its members become the world's cards">Tie</div>
+                    <div id="gr_world_create" class="menu_button interactable gr-flat-button" title="Create a group with this world's cards and open it">New group</div>
+                    <div id="gr_world_unlink" class="menu_button interactable gr-flat-button" title="Untie the group above from its world. Its members stay as they are">Untie</div>
+                    <div id="gr_world_sync" class="menu_button menu_button_icon interactable" title="Reload the characters and bring every world's group in step with its cards">
+                        <i class="fa-solid fa-rotate fa-fw"></i>
                     </div>
                 </div>
                 <label for="gr_roster_note">Author's Note for this group</label>
                 <textarea id="gr_roster_note" class="text_pole textarea_compact" rows="3"
                           placeholder="Filled into this chat's Author's Note when the panel toggle is on"></textarea>
-                <div class="gr-lists">
-                    <div class="gr-list-pane">
-                        <div class="gr-list-title">In roster (<span id="gr_in_count">0</span>)</div>
-                        <div id="gr_in_list" class="gr-settings-list"></div>
-                        <div class="flex-container">
-                            <div id="gr_settings_clear" class="menu_button interactable gr-flat-button" title="Remove every character from this roster">Clear</div>
-                        </div>
-                    </div>
-                    <div class="gr-list-pane">
-                        <div class="gr-list-title">Available characters</div>
-                        <input id="gr_settings_search" type="search" class="text_pole" placeholder="Search characters...">
-                        <div id="gr_out_list" class="gr-settings-list"></div>
-                    </div>
-                </div>
             </div>
 
             <div class="ss-settings-divider"></div>
@@ -2296,7 +2877,7 @@ const settingsHtml = `
     </div>
 </div>`;
 
-/** Fills the group dropdown, which is what picks the roster being edited. */
+/** Fills the group dropdown, which is what picks the stage being edited. */
 function renderGroupSelect() {
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_group_select'));
 
@@ -2318,10 +2899,9 @@ function renderGroupSelect() {
     for (const group of groups) {
         const option = document.createElement('option');
         option.value = group.id;
-        // create: false so merely listing the groups doesn't seed a roster for
-        // every one of them; the count falls back to the cast it would seed from.
-        const count = getRoster(group.id, { create: false })?.cards.length ?? group.members?.length ?? 0;
-        option.textContent = `${group.name} (${count})`;
+        const world = getGroupWorld(group.id);
+        const count = group.members?.length ?? 0;
+        option.textContent = world ? `${group.name} (${count}) · ${world}` : `${group.name} (${count})`;
         select.appendChild(option);
     }
 
@@ -2329,49 +2909,76 @@ function renderGroupSelect() {
 }
 
 /**
- * Shows the leftover-roster import row, and hides it for good once there is
- * nothing left to import.
+ * The World row: which world the group is tied to, the worlds there are, and
+ * what can be done with the one picked.
  */
-function renderLegacyImport() {
-    const settings = getSettings();
-    const block = document.getElementById('gr_legacy_block');
-    const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_legacy_select'));
+function renderWorldRow() {
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_world_select'));
+    const status = document.getElementById('gr_world_status');
 
-    if (!block || !select) {
+    if (!select || !status) {
         return;
     }
 
-    block.style.display = settings.legacyRosters.length ? '' : 'none';
+    const group = getSettingsGroup();
+    const world = group ? getGroupWorld(group.id) : '';
+    const previous = select.value;
+    const names = [...worldLorebooks.keys()].sort((a, b) => a.localeCompare(b));
+
     select.innerHTML = '';
 
-    for (const roster of settings.legacyRosters) {
+    for (const name of names) {
+        const owner = worldLorebooks.get(name);
         const option = document.createElement('option');
-        option.value = roster.id;
-        option.textContent = `${roster.name} (${roster.cards.length})`;
+        option.value = name;
+        const cast = getWorldCast(name).length;
+        const ownerName = owner ? groups.find(x => x.id === owner)?.name ?? owner : '';
+        option.textContent = ownerName ? t`${name} (${cast}) — group: ${ownerName}` : t`${name} (${cast})`;
         select.appendChild(option);
     }
+
+    if (!names.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = worldsResolved ? t`No worlds (lorebooks marked as worlds by the Character Editor)` : t`Loading…`;
+        select.appendChild(option);
+    }
+
+    select.value = world || (names.includes(previous) ? previous : names.find(x => !worldLorebooks.get(x)) ?? names[0] ?? '');
+    select.disabled = Boolean(world) || !names.length;
+
+    const picked = select.value;
+    const pickedOwner = worldLorebooks.get(picked) ?? '';
+
+    $('#gr_world_link').toggle(!world).toggleClass('disabled', !group || !picked || Boolean(pickedOwner));
+    $('#gr_world_create').toggle(!world).toggleClass('disabled', !picked || Boolean(pickedOwner));
+    $('#gr_world_unlink').toggle(Boolean(world));
+
+    status.textContent = !group ? t`Create a group chat, or a group for a world below.`
+        : world ? t`Tied to the world "${world}": its cards are this group's members, and they join and leave with the world. Mute and unmute them from the panel.`
+            : t`Not tied to a world. Its members are managed in SillyTavern's group settings.`;
 }
 
 /** @returns {Layout|null} The layout the settings drawer edits. */
 function getSettingsLayout() {
-    return getActiveLayout(getSettingsRoster());
+    return getActiveLayout(getSettingsStage());
 }
 
-/** True while roster cards are being loaded, so the repaint can't loop. */
+/** True while member cards are being loaded, so the repaint can't loop. */
 let loadingCardData = false;
 
 /**
- * Roster cards that aren't group members are shallow, and a shallow card has no
+ * Members of a group that isn't open are shallow, and a shallow card has no
  * data.group_only_greetings to list — the greeting column would read as "no
- * group greetings" for every card on the bench. Loads them once and repaints.
- * @param {Roster|null} roster
+ * group greetings" for every card. Loads them once and repaints.
+ * @param {object|null} group
  */
-function ensureGreetingsLoaded(roster) {
-    if (loadingCardData || !roster) {
+function ensureGreetingsLoaded(group) {
+    if (loadingCardData || !group) {
         return;
     }
 
-    const pending = roster.cards
+    const pending = (group.members ?? [])
         .map(avatar => characters.findIndex(x => x.avatar === avatar))
         .filter(chid => chid !== -1 && characters[chid]?.shallow);
 
@@ -2397,7 +3004,7 @@ function ensureGreetingsLoaded(roster) {
 
 /** Fills the layout dropdown for whichever group the drawer is showing. */
 function renderLayoutSelect() {
-    const roster = getSettingsRoster();
+    const stage = getSettingsStage();
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_layout_select'));
 
     if (!select) {
@@ -2405,7 +3012,7 @@ function renderLayoutSelect() {
     }
 
     select.innerHTML = '';
-    select.disabled = !roster;
+    select.disabled = !stage;
 
     // Always offered: a group with no layout selected is left entirely alone,
     // which is the only way back to stock behaviour once layouts exist.
@@ -2414,15 +3021,15 @@ function renderLayoutSelect() {
     none.textContent = t`No layout`;
     select.appendChild(none);
 
-    for (const layout of roster?.layouts ?? []) {
+    for (const layout of stage?.layouts ?? []) {
         const option = document.createElement('option');
         option.value = layout.id;
         option.textContent = layout.name;
         select.appendChild(option);
     }
 
-    select.value = roster?.activeLayoutId ?? '';
-    $('#gr_layout_new').toggleClass('disabled', !roster);
+    select.value = stage?.activeLayoutId ?? '';
+    $('#gr_layout_new').toggleClass('disabled', !stage);
     $('#gr_layout_rename').toggleClass('disabled', !getSettingsLayout());
     $('#gr_layout_delete').toggleClass('disabled', !getSettingsLayout());
 }
@@ -2498,15 +3105,17 @@ function makeGreetingSelect(layout, avatar, character, entry) {
         select.appendChild(option);
     });
 
-    // A pin past the end of an edited card's list reads as random rather than
-    // silently becoming whichever greeting slid into that index.
-    const pinned = Number.isInteger(entry.greeting) && entry.greeting < greetings.length ? entry.greeting : null;
+    // Found by its text first, so a pin follows its greeting when the card's
+    // greetings are reordered; one past the end of the list reads as random.
+    const pinned = resolvePin(entry, greetings);
     select.value = pinned === null ? '' : String(pinned);
     select.disabled = !entry.greets;
     select.title = t`Which group greeting this card opens with`;
 
     select.addEventListener('change', () => {
-        setLayoutEntry(layout, avatar, { greeting: select.value === '' ? null : Number(select.value) });
+        const index = select.value === '' ? null : Number(select.value);
+        setLayoutEntry(getSettingsGroupId(), layout, avatar,
+            { greeting: index, greetingKey: index === null ? undefined : greetingKey(greetings[index]) });
     });
 
     return cell;
@@ -2554,11 +3163,11 @@ function makeLayoutRow(layout, avatar) {
     const active = makeLayoutCheckbox({
         checked: entry.active,
         disabled: !character,
-        title: t`In the group while this layout is selected`,
+        title: t`In the scene (unmuted) while this layout is selected`,
         onChange: (checked) => {
             // Being in the scene implies opening it; uncheck Greets to have a
             // card present from the start without a line of its own.
-            setLayoutEntry(layout, avatar, { active: checked, greets: checked });
+            setLayoutEntry(getSettingsGroupId(), layout, avatar, { active: checked, greets: checked });
             renderLayoutCards();
         },
     });
@@ -2568,7 +3177,7 @@ function makeLayoutRow(layout, avatar) {
         disabled: !character || !entry.active,
         title: t`Posts an opening message when a new chat starts`,
         onChange: (checked) => {
-            setLayoutEntry(layout, avatar, { greets: checked });
+            setLayoutEntry(getSettingsGroupId(), layout, avatar, { greets: checked });
             renderLayoutCards();
         },
     });
@@ -2586,7 +3195,7 @@ function renderLayoutCards() {
         return;
     }
 
-    const roster = getSettingsRoster();
+    const group = getSettingsGroup();
     const layout = getSettingsLayout();
 
     body.style.display = layout ? '' : 'none';
@@ -2595,13 +3204,13 @@ function renderLayoutCards() {
         return;
     }
 
-    ensureGreetingsLoaded(roster);
+    ensureGreetingsLoaded(group);
     container.innerHTML = '';
 
-    if (!roster.cards.length) {
+    if (!group?.members?.length) {
         const empty = document.createElement('div');
         empty.classList.add('gr-empty');
-        empty.textContent = t`This group's roster is empty — add cards above.`;
+        empty.textContent = t`This group has no members.`;
         container.appendChild(empty);
         return;
     }
@@ -2619,7 +3228,7 @@ function renderLayoutCards() {
 
     container.appendChild(head);
 
-    for (const avatar of getLayoutOrder(roster, layout)) {
+    for (const avatar of getLayoutOrder(group, layout)) {
         container.appendChild(makeLayoutRow(layout, avatar));
     }
 }
@@ -2640,134 +3249,7 @@ function saveLayoutOrder() {
     }
 
     layout.order = $('#gr_layout_cards > .gr-layout-row').map((_, row) => row.dataset.avatar).get();
-    saveSettingsDebounced();
-}
-
-/**
- * Builds one row for either settings list.
- * @param {object} character Character object
- * @param {boolean} isMember Whether the character is in the active roster
- * @returns {HTMLElement}
- */
-function makeSettingsRow(character, isMember) {
-    const row = document.createElement('div');
-    row.classList.add('gr-settings-row');
-    row.tabIndex = 0;
-    row.title = isMember ? t`Remove from roster` : t`Add to roster`;
-
-    const thumb = document.createElement('img');
-    thumb.classList.add('gr-settings-avatar');
-    thumb.src = getThumbnailUrl('avatar', character.avatar);
-    thumb.alt = character.name;
-
-    const name = document.createElement('span');
-    name.classList.add('gr-settings-name');
-    name.textContent = character.name;
-
-    const action = document.createElement('i');
-    action.classList.add('fa-solid', 'fa-fw', isMember ? 'fa-minus' : 'fa-plus', 'gr-settings-action');
-
-    row.append(thumb, name, action);
-
-    const toggle = () => {
-        const roster = getSettingsRoster();
-
-        if (!roster) {
-            return;
-        }
-
-        const index = roster.cards.indexOf(character.avatar);
-
-        if (isMember && index !== -1) {
-            roster.cards.splice(index, 1);
-        } else if (!isMember && index === -1) {
-            roster.cards.push(character.avatar);
-        }
-
-        saveSettingsDebounced();
-        renderGroupSelect();
-        renderRosterLists();
-        renderLayoutCards();
-        refreshPanel();
-    };
-
-    row.addEventListener('click', toggle);
-    row.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            toggle();
-        }
-    });
-
-    return row;
-}
-
-/** Renders both settings lists: the active roster, and everything not in it. */
-function renderRosterLists() {
-    const inList = document.getElementById('gr_in_list');
-    const outList = document.getElementById('gr_out_list');
-
-    if (!inList || !outList) {
-        return;
-    }
-
-    const roster = getSettingsRoster();
-    const searchInput = /** @type {HTMLInputElement} */ (document.getElementById('gr_settings_search'));
-    const term = (searchInput?.value ?? '').trim().toLowerCase();
-
-    inList.innerHTML = '';
-    outList.innerHTML = '';
-
-    const inCount = document.getElementById('gr_in_count');
-    if (inCount) {
-        inCount.textContent = String(roster?.cards.length ?? 0);
-    }
-
-    if (!roster) {
-        const empty = document.createElement('div');
-        empty.classList.add('gr-empty');
-        empty.textContent = t`Create a group chat first — rosters belong to a group.`;
-        inList.appendChild(empty);
-        return;
-    }
-
-    // Roster order is meaningful, so walk cards rather than the character list.
-    for (const avatar of roster.cards) {
-        const character = getCharacterByAvatar(avatar);
-
-        if (!character) {
-            const missing = document.createElement('div');
-            missing.classList.add('gr-settings-row', 'gr-card-missing');
-            missing.textContent = t`Missing: ${avatar}`;
-            inList.appendChild(missing);
-            continue;
-        }
-
-        inList.appendChild(makeSettingsRow(character, true));
-    }
-
-    if (!roster.cards.length) {
-        const empty = document.createElement('div');
-        empty.classList.add('gr-empty');
-        empty.textContent = t`Empty roster.`;
-        inList.appendChild(empty);
-    }
-
-    const available = characters
-        .filter(x => !roster.cards.includes(x.avatar))
-        .filter(x => !term || x.name.toLowerCase().includes(term))
-        .sort((a, b) => a.name.localeCompare(b.name));
-
-    for (const character of available) {
-        outList.appendChild(makeSettingsRow(character, false));
-    }
-
-    if (!available.length) {
-        const empty = document.createElement('div');
-        empty.classList.add('gr-empty');
-        empty.textContent = term ? t`No characters match.` : t`Every character is in this roster.`;
-        outList.appendChild(empty);
-    }
+    saveStage(getSettingsGroupId());
 }
 
 /**
@@ -2812,12 +3294,15 @@ function renderAssistProfileSelect() {
 }
 
 function renderSettings() {
+    if (!document.getElementById('gr_group_select')) {
+        return;
+    }
+
     renderGroupSelect();
-    renderLegacyImport();
-    renderRosterLists();
+    renderWorldRow();
     renderLayoutSelect();
     renderLayoutCards();
-    $('#gr_roster_note').val(getSettingsRoster()?.note ?? '').prop('disabled', !getSettingsRoster());
+    $('#gr_roster_note').val(getSettingsStage()?.note ?? '').prop('disabled', !getSettingsStage());
     $('#gr_layout_note').val(getSettingsLayout()?.note ?? '');
     $('#gr_layout_narrator').val(getSettingsLayout()?.narrator ?? '');
     renderAssistProfileSelect();
@@ -2857,55 +3342,70 @@ function addSettings() {
         renderSettings();
     });
 
-    $('#gr_legacy_import').on('click', () => {
-        const roster = getSettingsRoster();
+    $('#gr_world_select').on('change', renderWorldRow);
 
-        if (!roster) {
-            toastr.warning(t`Create a group chat first.`);
+    /**
+     * Runs a World row action with its button disabled, reporting failures.
+     * @param {string} selector
+     * @param {function(): Promise<void>} work
+     */
+    const worldAction = async (selector, work) => {
+        const $button = $(selector);
+
+        if ($button.hasClass('disabled')) {
             return;
         }
 
-        const legacy = getSettings().legacyRosters.find(x => x.id === String($('#gr_legacy_select').val()));
+        $button.addClass('disabled');
 
-        if (!legacy) {
+        try {
+            await work();
+        } catch (error) {
+            console.error('[SideStage] World action failed', error);
+            toastr.error(error?.message || t`Unknown error`);
+        } finally {
+            $button.removeClass('disabled');
+            renderSettings();
+            refreshPanel();
+        }
+    };
+
+    $('#gr_world_link').on('click', () => worldAction('#gr_world_link', async () => {
+        await linkGroupToWorld(getSettingsGroupId(), String($('#gr_world_select').val()));
+    }));
+
+    $('#gr_world_create').on('click', () => worldAction('#gr_world_create', async () => {
+        await createWorldGroup(String($('#gr_world_select').val()));
+        settingsGroupId = '';
+    }));
+
+    $('#gr_world_unlink').on('click', () => worldAction('#gr_world_unlink', async () => {
+        const group = getSettingsGroup();
+        const world = group ? getGroupWorld(group.id) : '';
+
+        if (!world) {
             return;
         }
 
-        // Union rather than replace: importing twice, or importing two
-        // overlapping rosters, must not duplicate a card.
-        const added = legacy.cards.filter(x => !roster.cards.includes(x));
-        roster.cards.push(...added);
-        saveSettingsDebounced();
-        renderSettings();
-        refreshPanel();
-        toastr.info(added.length
-            ? t`Added ${added.length} card(s) to this group's roster.`
-            : t`Every card was already in this group's roster.`);
-    });
+        const confirmed = await Popup.show.confirm(t`Untie "${group.name}" from "${world}"?`,
+            t`Its members stay as they are, and its layouts and note move back into SideStage's settings.`);
 
-    $('#gr_legacy_discard').on('click', async () => {
-        const confirmed = await Popup.show.confirm(
-            t`Discard leftover rosters`,
-            t`Delete every roster left over from before rosters followed groups? Group rosters are not touched.`);
-
-        if (!confirmed) {
-            return;
+        if (confirmed) {
+            await unlinkGroupFromWorld(group.id);
         }
+    }));
 
-        getSettings().legacyRosters = [];
-        saveSettingsDebounced();
-        renderSettings();
-    });
+    $('#gr_world_sync').on('click', () => worldAction('#gr_world_sync', () => refreshWorlds({ reload: true })));
 
     $('#gr_roster_note').on('input', function () {
-        const roster = getSettingsRoster();
+        const stage = getSettingsStage();
 
-        if (!roster) {
+        if (!stage) {
             return;
         }
 
-        roster.note = String($(this).val());
-        saveSettingsDebounced();
+        stage.note = String($(this).val());
+        saveStage(getSettingsGroupId());
         // The chat is holding this text while the toggle is on, and the toggle
         // greys out for a group with no note at all.
         syncNoteToChat();
@@ -2913,21 +3413,21 @@ function addSettings() {
     });
 
     $('#gr_layout_select').on('change', async function () {
-        const roster = getSettingsRoster();
+        const stage = getSettingsStage();
 
-        if (!roster) {
+        if (!stage) {
             return;
         }
 
-        roster.activeLayoutId = String($(this).val());
-        saveSettingsDebounced();
+        stage.activeLayoutId = String($(this).val());
+        saveStage(getSettingsGroupId());
 
-        // Only the open group's cast can be reshaped from here; another group's
-        // layout takes hold the next time a chat of that group starts. Its note
-        // is the same story: only the open chat is holding one right now.
+        // Only the open group can be muted from here; another group's layout
+        // takes hold the next time a chat of that group starts. Its note is the
+        // same story: only the open chat is holding one right now.
         if (getSettingsGroupId() === getCurrentGroup()?.id) {
             syncNoteToChat();
-            await applyLayoutMembership();
+            await applyLayoutMutes();
         }
 
         renderSettings();
@@ -2935,9 +3435,9 @@ function addSettings() {
     });
 
     $('#gr_layout_new').on('click', async () => {
-        const roster = getSettingsRoster();
+        const stage = getSettingsStage();
 
-        if (!roster) {
+        if (!stage) {
             toastr.warning(t`Create a group chat first.`);
             return;
         }
@@ -2951,19 +3451,19 @@ function addSettings() {
         /** @type {Layout} */
         const layout = { id: uuidv4(), name: String(name).trim(), note: '', narrator: '', order: [], cards: {} };
 
-        // Seeded from the cast the group has right now, so a new layout starts
-        // out doing what the group already does and is edited down from there.
-        const group = groups.find(x => x.id === getSettingsGroupId());
+        // Seeded from who is in the scene right now, so a new layout starts out
+        // doing what the group already does and is edited down from there.
+        const group = getSettingsGroup();
 
-        for (const avatar of roster.cards) {
-            if (group?.members?.includes(avatar)) {
+        for (const avatar of group?.members ?? []) {
+            if (!group.disabled_members?.includes(avatar)) {
                 layout.cards[avatar] = { active: true, greets: true, greeting: null };
             }
         }
 
-        roster.layouts.push(layout);
-        roster.activeLayoutId = layout.id;
-        saveSettingsDebounced();
+        stage.layouts.push(layout);
+        stage.activeLayoutId = layout.id;
+        saveStage(getSettingsGroupId());
         renderSettings();
         refreshPanel();
     });
@@ -2982,16 +3482,16 @@ function addSettings() {
         }
 
         layout.name = String(name).trim();
-        saveSettingsDebounced();
+        saveStage(getSettingsGroupId());
         renderLayoutSelect();
         refreshPanel();
     });
 
     $('#gr_layout_delete').on('click', async () => {
-        const roster = getSettingsRoster();
+        const stage = getSettingsStage();
         const layout = getSettingsLayout();
 
-        if (!roster || !layout) {
+        if (!stage || !layout) {
             return;
         }
 
@@ -3001,9 +3501,9 @@ function addSettings() {
             return;
         }
 
-        roster.layouts = roster.layouts.filter(x => x.id !== layout.id);
-        roster.activeLayoutId = '';
-        saveSettingsDebounced();
+        stage.layouts = stage.layouts.filter(x => x.id !== layout.id);
+        stage.activeLayoutId = '';
+        saveStage(getSettingsGroupId());
         renderSettings();
         refreshPanel();
     });
@@ -3016,7 +3516,7 @@ function addSettings() {
         }
 
         layout.note = String($(this).val());
-        saveSettingsDebounced();
+        saveStage(getSettingsGroupId());
         // This note wins over the group's, so whichever is in play is what the
         // chat should be holding while the toggle is on.
         syncNoteToChat();
@@ -3031,7 +3531,7 @@ function addSettings() {
         }
 
         layout.narrator = String($(this).val());
-        saveSettingsDebounced();
+        saveStage(getSettingsGroupId());
     });
 
     // Bound once to the container, which outlives the rows: sortable refreshes
@@ -3044,21 +3544,6 @@ function addSettings() {
         forcePlaceholderSize: true,
         delay: getSortableDelay(),
         stop: saveLayoutOrder,
-    });
-
-    $('#gr_settings_search').on('input', renderRosterLists);
-
-    $('#gr_settings_clear').on('click', () => {
-        const roster = getSettingsRoster();
-
-        if (!roster) {
-            return;
-        }
-
-        roster.cards = [];
-        saveSettingsDebounced();
-        renderSettings();
-        refreshPanel();
     });
 
     // Characters may still be loading when the drawer is built, so repaint the
@@ -3106,6 +3591,10 @@ function syncPanelToChat() {
     if (!selected_group) {
         closePanel();
         return;
+    }
+
+    if (getGroupWorld(selected_group)) {
+        syncWorldGroup(selected_group).catch(error => console.error('[SideStage] Could not sync the world group', error));
     }
 
     if (isPanelOpen()) {
@@ -4019,7 +4508,12 @@ jQuery(async () => {
 
     eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
     eventSource.on(event_types.GROUP_CHAT_CREATED, openSceneFromLayout);
-    eventSource.on(event_types.APP_READY, pruneOrphanRosters);
+    eventSource.on(event_types.APP_READY, pruneOrphanStages);
+    eventSource.on(event_types.APP_READY, () => refreshWorlds());
+    // A card's world can change in ST too (and a deleted card leaves its world).
+    eventSource.on(event_types.CHARACTER_EDITED, syncWorldGroupsSoon);
+    eventSource.on(event_types.CHARACTER_DELETED, syncWorldGroupsSoon);
+    eventSource.on(event_types.CHARACTER_RENAMED, renameInStages);
     eventSource.on(event_types.APP_READY, () => {
         // Extension-GroupGreetings listens to the same event and overwrites the
         // greeting for any card with a group-greeting pool — the exact cards a

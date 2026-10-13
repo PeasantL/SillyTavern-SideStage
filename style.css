@@ -121,6 +121,20 @@ body.waifuMode .zoomed_avatar {
     line-height: inherit;
 }
 
+/* The world group's sync button; hidden for groups not tied to a world. */
+.gr-header-btn {
+    flex: 0 0 auto;
+    cursor: pointer;
+    font-size: 0.85em;
+    line-height: inherit;
+    opacity: 0.6;
+}
+
+.gr-header-btn:hover,
+.gr-header-btn:focus-visible {
+    opacity: 1;
+}
+
 .gr-title {
     display: flex;
     align-items: baseline;
@@ -348,6 +362,12 @@ body.waifuMode .zoomed_avatar {
   }
 }
 
+/* Muted: still in the group, just not picked to reply. */
+.gr-card.gr-muted .gr-card-avatar,
+.gr-card.gr-muted .gr-card-name {
+    opacity: 0.45;
+}
+
 .gr-card.gr-speaking {
     background: rgba(0, 0, 0, 0.3);
     outline: 1px solid var(--smart-theme-color, #007bff);
@@ -459,43 +479,6 @@ body.waifuMode .zoomed_avatar {
 }
 
 /* ---- Settings drawer ---------------------------------------------------- */
-.gr-lists {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 10px;
-    margin-top: 8px;
-}
-
-.gr-list-pane {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-}
-
-.gr-list-title {
-    font-weight: bold;
-    opacity: 0.8;
-}
-
-.gr-settings-list {
-    max-height: 260px;
-    overflow-y: auto;
-    margin-top: 5px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 6px;
-    padding: 4px;
-}
-
-.gr-settings-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 2px 4px;
-    cursor: pointer;
-    border-radius: 4px;
-}
-
 .gr-settings-name {
     flex: 1 1 auto;
     min-width: 0;
@@ -504,29 +487,13 @@ body.waifuMode .zoomed_avatar {
     white-space: nowrap;
 }
 
-.gr-settings-action {
-    flex: 0 0 auto;
-    opacity: 0.5;
-}
-
-@media (hover: hover) {
-  .gr-settings-row:hover .gr-settings-action {
-      opacity: 1;
-  }
-}
-
-.gr-settings-row:focus-visible {
-    outline: 2px solid var(--smart-theme-color, #007bff);
-    outline-offset: -2px;
-}
-
 .menu_button.disabled {
     pointer-events: none;
     opacity: 0.4;
 }
 
-/* Clear wipes the whole roster and is rarely wanted: flatten it so it doesn't
-   read as a primary action sitting under the list. */
+/* Secondary actions beside a dropdown: flattened so they don't read as
+   primary actions. */
 .menu_button.gr-flat-button {
     background-color: transparent;
     border-color: transparent;
@@ -540,12 +507,6 @@ body.waifuMode .zoomed_avatar {
 @media (hover: hover) {
   .menu_button.gr-flat-button:hover {
       opacity: 1;
-      background-color: var(--white20a);
-  }
-}
-
-@media (hover: hover) {
-  .gr-settings-row:hover {
       background-color: var(--white20a);
   }
 }
@@ -820,15 +781,6 @@ body.waifuMode .zoomed_avatar {
    long roster or layout name would otherwise push the drawer sideways. */
 .sidestage-settings select {
     max-width: 100%;
-}
-
-/* Toggled with an inline display, so it needs its own column layout to fall
-   back to: the section's gap doesn't reach inside a wrapper. Hidden for good
-   once the last leftover roster has been imported or discarded. */
-#gr_legacy_block {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
 }
 
 .ss-settings-heading {
