@@ -113,6 +113,8 @@ let focusedAvatar = null;
  * @property {Layout[]} layouts Scenes that can be opened with this cast
  * @property {string} activeLayoutId Id of the selected layout, or '' for none
  * @property {string} [group] Id of the group, for a stage kept in a world's lorebook
+ * @property {number} [rev] For a stage kept in a world's lorebook: raised by every save, by SideStage or the
+ *     Character Editor, so a save can tell the file changed since it was read (see mergeStage())
  */
 
 const rosterDefaults = {
@@ -473,6 +475,10 @@ function pruneOrphanStages() {
  *
  * Cards changed outside ST (the editor) reach ST's character list on a reload;
  * the sync button reloads it without one.
+ *
+ * The Character Editor edits the layouts too. Every save raises the stage's
+ * `rev`; one that finds the file's `rev` moved on since it was read merges what
+ * changed here into the file's version instead of writing over it.
  */
 const WORLD_KEY = 'sidestage';
 const WORLD_SAVE_DELAY = 1000;
@@ -485,6 +491,8 @@ const worldStages = new Map();
 const worldLorebooks = new Map();
 /** World lorebook name -> the group id its file named when last read, even one since deleted. */
 const recordedGroups = new Map();
+/** World lorebook name -> a copy of its stage as last read from or written to the file: what changed here since. */
+const worldBases = new Map();
 /** Whether resolveWorlds() has run, so a group missing from groupWorlds is known to have no world. */
 let worldsResolved = false;
 
@@ -544,9 +552,91 @@ function isWorldLorebook(data) {
 }
 
 /**
+ * Three-way merge of two objects keyed alike: every key changed here since
+ * `base` takes this side's value (a removed key is removed), every other key
+ * keeps the file's.
+ * @param {object} local
+ * @param {object} base
+ * @param {object} file
+ * @param {Record<string, function(any, any, any): any>} [nested] Keys merged by a function of their own
+ * @returns {object}
+ */
+function mergeKeys(local, base, file, nested = {}) {
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const merged = structuredClone(file);
+
+    for (const key of new Set([...Object.keys(local), ...Object.keys(base)])) {
+        if (nested[key] && key in local && key in base && key in file) {
+            merged[key] = nested[key](local[key], base[key], file[key]);
+        } else if (!same(local[key], base[key])) {
+            if (key in local) {
+                merged[key] = structuredClone(local[key]);
+            } else {
+                delete merged[key];
+            }
+        }
+    }
+
+    return merged;
+}
+
+/**
+ * Brings a world's stage up to the version in its file, keeping what changed
+ * here since it was last read (`base`) and taking everything else from the
+ * file, so layouts edited in the Character Editor (or another tab) meanwhile
+ * are kept. Changes are kept per field: the group's note and selected layout,
+ * a layout's name, note, narrator and order, and each card's entry in it.
+ * Layouts added here are added; a layout deleted on either side stays deleted.
+ * Done in place, as the drawer and panel hold on to the stage. The Character
+ * Editor merges its saves the same way (worlds.merge_stage).
+ * @param {Stage} local
+ * @param {Stage} base
+ * @param {object} file The stage in the file
+ */
+function mergeStage(local, base, file) {
+    const merged = normalizeStage(structuredClone(file));
+    const baseLayouts = new Map(base.layouts.map(x => [x.id, x]));
+    const localLayouts = new Map(local.layouts.map(x => [x.id, x]));
+
+    for (const key of ['note', 'activeLayoutId']) {
+        if (local[key] !== base[key]) {
+            merged[key] = local[key];
+        }
+    }
+
+    merged.layouts = merged.layouts
+        .filter(x => !baseLayouts.has(x.id) || localLayouts.has(x.id))
+        .map(x => baseLayouts.has(x.id)
+            ? mergeKeys(localLayouts.get(x.id), baseLayouts.get(x.id), x, { cards: mergeKeys })
+            : x);
+
+    for (const layout of local.layouts) {
+        if (!baseLayouts.has(layout.id) && !merged.layouts.some(x => x.id === layout.id)) {
+            merged.layouts.push(structuredClone(layout));
+        }
+    }
+
+    merged.group = local.group;
+    normalizeStage(merged);
+
+    for (const key of Object.keys(local)) {
+        delete local[key];
+    }
+
+    Object.assign(local, merged);
+}
+
+/** @returns {number} A stage's revision (0 for one saved before revisions). */
+function stageRev(stage) {
+    return Number.isInteger(stage?.rev) ? stage.rev : 0;
+}
+
+/**
  * Writes a world's stage into its lorebook, or removes it when the world no
  * longer has one. Re-reads the file first and replaces only extensions.sidestage,
- * so entries and anything else edited elsewhere in the meantime are kept.
+ * so entries and anything else edited elsewhere in the meantime are kept; a
+ * stage saved there since it was read (by the Character Editor) is merged with
+ * this one rather than overwritten.
  * @param {string} world
  */
 async function writeWorldStage(world) {
@@ -558,9 +648,25 @@ async function writeWorldStage(world) {
 
     const extensions = data.extensions && typeof data.extensions === 'object' ? data.extensions : {};
     const stage = worldStages.get(world);
+    const file = extensions[WORLD_KEY] && typeof extensions[WORLD_KEY] === 'object' ? extensions[WORLD_KEY] : null;
+    let written = null;
 
     if (stage) {
-        extensions[WORLD_KEY] = structuredClone(stage);
+        const base = worldBases.get(world);
+        const merge = Boolean(base && file && stageRev(file) !== stageRev(base));
+
+        if (merge) {
+            mergeStage(stage, base, file);
+        }
+
+        stage.rev = Math.max(stageRev(stage), stageRev(file)) + 1;
+        written = structuredClone(stage);
+        extensions[WORLD_KEY] = written;
+
+        if (merge) {
+            renderSettings();
+            refreshPanel();
+        }
     } else {
         delete extensions[WORLD_KEY];
     }
@@ -572,6 +678,37 @@ async function writeWorldStage(world) {
     }
 
     await saveWorldInfo(world, data, true);
+
+    if (written) {
+        worldBases.set(world, structuredClone(written));
+    }
+}
+
+/**
+ * Takes the world's stage from its file when it was saved elsewhere (layouts
+ * edited in the Character Editor) since SideStage read it. A save waiting to
+ * go is written first, which merges the two.
+ * @param {string} world
+ */
+async function pullWorldStage(world) {
+    if (pendingWorldSaves.has(world)) {
+        await flushWorldSave(world);
+        return;
+    }
+
+    const stage = worldStages.get(world);
+    const base = worldBases.get(world);
+    const data = stage && base ? await fetchWorld(world) : null;
+    const file = data?.extensions?.[WORLD_KEY];
+
+    if (!file || typeof file !== 'object' || stageRev(file) === stageRev(base) || String(file.group ?? '') !== stage.group) {
+        return;
+    }
+
+    mergeStage(stage, base, file);
+    worldBases.set(world, structuredClone(stage));
+    renderSettings();
+    refreshPanel();
 }
 
 /** World name -> pending save timer. */
@@ -618,6 +755,7 @@ async function resolveWorlds() {
     const lorebooks = new Map();
     const owners = new Map();
     const recorded = new Map();
+    const bases = new Map();
 
     for (const name of names) {
         let data = null;
@@ -644,6 +782,7 @@ async function resolveWorlds() {
         if (owned) {
             owners.set(groupId, name);
             stages.set(name, normalizeStage(stage));
+            bases.set(name, structuredClone(stage));
         }
     }
 
@@ -653,6 +792,8 @@ async function resolveWorlds() {
     lorebooks.forEach((owner, name) => worldLorebooks.set(name, owner));
     recordedGroups.clear();
     recorded.forEach((groupId, name) => recordedGroups.set(name, groupId));
+    worldBases.clear();
+    bases.forEach((stage, name) => worldBases.set(name, stage));
     groupWorlds.clear();
 
     for (const group of groups) {
@@ -801,6 +942,7 @@ async function createWorldGroup(world, data) {
     stage.group = String(created.id);
 
     worldStages.set(world, stage);
+    worldBases.set(world, structuredClone(stage));
     worldLorebooks.set(world, stage.group);
     recordedGroups.set(world, stage.group);
     groupWorlds.set(stage.group, world);
@@ -3297,7 +3439,14 @@ function addSettings() {
 
     // Characters may still be loading when the drawer is built, so repaint the
     // lists whenever it is opened rather than trusting the one-shot render.
-    $(document).on('click', '.sidestage-settings .inline-drawer-toggle', renderSettings);
+    $(document).on('click', '.sidestage-settings .inline-drawer-toggle', () => {
+        renderSettings();
+        const world = getGroupWorld(getSettingsGroupId());
+
+        if (world) {
+            pullWorldStage(world).catch(error => console.error('[SideStage] Could not read the world\'s layouts', error));
+        }
+    });
 
     // Image half of the same drawer.
     $('#civ-auto-open')
@@ -3342,8 +3491,11 @@ function syncPanelToChat() {
         return;
     }
 
-    if (getGroupWorld(selected_group)) {
+    const world = getGroupWorld(selected_group);
+
+    if (world) {
         syncWorldGroup(selected_group).catch(error => console.error('[SideStage] Could not sync the world group', error));
+        pullWorldStage(world).catch(error => console.error('[SideStage] Could not read the world\'s layouts', error));
     }
 
     if (isPanelOpen()) {
