@@ -106,21 +106,18 @@ let focusedAvatar = null;
  * What SideStage keeps for one group. The cast is the group's own member list,
  * and who is in the scene is who is unmuted, so neither is stored here.
  *
- * A group tied to a world keeps its stage in the world's lorebook (see the
- * Worlds region), with `group` naming the group; any other group keeps it in
- * the extension settings.
+ * Only a world's group has one, kept in the world's lorebook (see the Worlds
+ * region) with `group` naming the group. Other groups have no layouts or note.
  * @typedef {object} Stage
  * @property {string} note Author's Note the footer toggle fills the chat with
  * @property {Layout[]} layouts Scenes that can be opened with this cast
  * @property {string} activeLayoutId Id of the selected layout, or '' for none
- * @property {string} [group] Id of the group, for a stage kept in a world's lorebook
- * @property {number} [rev] For a stage kept in a world's lorebook: raised by every save, by SideStage or the
- *     Character Editor, so a save can tell the file changed since it was read (see mergeStage())
+ * @property {string} [group] Id of the world's group
+ * @property {number} [rev] Raised by every save, by SideStage or the Character Editor, so a save can tell the
+ *     file changed since it was read (see mergeStage())
  */
 
 const rosterDefaults = {
-    /** @type {Record<string, Stage>} Stages by group id, for groups not tied to a world. Created on demand. */
-    groups: {},
     /**
      * Whether an OOC / Morality / Scene exchange is ghosted once it lands —
      * ST's own "Exclude message from prompts" — so it stays on screen but
@@ -211,48 +208,25 @@ function getSettings() {
     delete settings.oocPrompts;
     delete settings.assistProfile;
     delete settings.oocHistory;
-
-    for (const stage of Object.values(settings.groups)) {
-        delete stage.cards;
-        normalizeStage(stage);
-    }
+    // Only worlds' groups have layouts and a note now (kept in the lorebook);
+    // drop the ones ordinary groups kept here.
+    delete settings.groups;
 
     return settings;
 }
 
 /**
- * The stage of one group: from its world's lorebook when it is tied to one,
- * otherwise from the settings (created on first use).
+ * The stage of one group, kept in its world's lorebook.
  * @param {string} [groupId]
- * @returns {Stage|null} Null for no group, or while it isn't known yet whether the group has a world.
+ * @returns {Stage|null} Null for no group, a group not tied to a world, or while that isn't known yet.
  */
 function getStage(groupId) {
-    if (!groupId || !groups.some(x => x.id === groupId)) {
-        return null;
-    }
-
-    const world = getGroupWorld(groupId);
-
-    if (world === null) {
-        return null;
-    }
-
-    if (world) {
-        return worldStages.get(world) ?? null;
-    }
-
-    const settings = getSettings();
-
-    if (!settings.groups[groupId]) {
-        settings.groups[groupId] = normalizeStage({});
-        saveSettingsDebounced();
-    }
-
-    return settings.groups[groupId];
+    const world = groupId ? getGroupWorld(groupId) : '';
+    return world ? worldStages.get(world) ?? null : null;
 }
 
 /**
- * Saves a group's stage wherever it lives.
+ * Saves a group's stage into its world's lorebook (shortly).
  * @param {string} groupId
  */
 function saveStage(groupId) {
@@ -260,8 +234,6 @@ function saveStage(groupId) {
 
     if (world) {
         saveWorldStageDebounced(world);
-    } else {
-        saveSettingsDebounced();
     }
 }
 
@@ -270,13 +242,21 @@ function getActiveStage() {
     return getStage(getCurrentGroup()?.id);
 }
 
-/** @returns {string} Id of the group the settings drawer is editing. */
+/** @returns {object[]} The groups tied to a world: the only ones with layouts and a note. */
+function getWorldGroups() {
+    return groups.filter(x => getGroupWorld(x.id));
+}
+
+/** @returns {string} Id of the world group the settings drawer is editing: the open one, if it is a world's. */
 function getSettingsGroupId() {
-    if (settingsGroupId && groups.some(x => x.id === settingsGroupId)) {
+    const worldGroups = getWorldGroups();
+
+    if (settingsGroupId && worldGroups.some(x => x.id === settingsGroupId)) {
         return settingsGroupId;
     }
 
-    return getCurrentGroup()?.id ?? groups[0]?.id ?? '';
+    const current = getCurrentGroup();
+    return (current && getGroupWorld(current.id) ? current.id : worldGroups[0]?.id) ?? '';
 }
 
 /** @returns {object|null} The group the settings drawer edits. */
@@ -348,32 +328,6 @@ function setLayoutEntry(groupId, layout, avatar, patch) {
  */
 function getTurnText(entry) {
     return typeof entry.text === 'string' ? entry.text : '';
-}
-
-/**
- * Drops stages whose group is gone. There is no group-deleted event — only
- * GROUP_CHAT_DELETED — so this sweeps once the group list is known rather than
- * reacting to the deletion itself. Bails while the list is empty, since that is
- * indistinguishable from it not having loaded yet.
- */
-function pruneOrphanStages() {
-    if (!groups.length) {
-        return;
-    }
-
-    const settings = getSettings();
-    let dirty = false;
-
-    for (const id of Object.keys(settings.groups)) {
-        if (!groups.some(x => x.id === id)) {
-            delete settings.groups[id];
-            dirty = true;
-        }
-    }
-
-    if (dirty) {
-        saveSettingsDebounced();
-    }
 }
 
 // #region Worlds
@@ -987,10 +941,6 @@ function renameInStages(oldAvatar, newAvatar) {
 
         return changed;
     };
-
-    if (Object.values(getSettings().groups).map(rename).some(Boolean)) {
-        saveSettingsDebounced();
-    }
 
     for (const [world, stage] of worldStages) {
         if (rename(stage)) {
@@ -2652,6 +2602,7 @@ function refreshLayoutPicker() {
 
     picker.value = stage?.activeLayoutId ?? '';
     picker.disabled = !stage;
+    picker.title = stage || !getCurrentGroup() ? '' : t`Layouts are for worlds' groups`;
 }
 
 /** Re-renders the card list inside an already open panel. */
@@ -2850,7 +2801,7 @@ const settingsHtml = `
     </div>
 </div>`;
 
-/** Fills the group dropdown, which is what picks the stage being edited. */
+/** Fills the group dropdown with the worlds' groups; it picks the stage being edited. */
 function renderGroupSelect() {
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_group_select'));
 
@@ -2858,18 +2809,19 @@ function renderGroupSelect() {
         return;
     }
 
+    const worldGroups = getWorldGroups();
     select.innerHTML = '';
-    select.disabled = !groups.length;
+    select.disabled = !worldGroups.length;
 
-    if (!groups.length) {
+    if (!worldGroups.length) {
         const option = document.createElement('option');
         option.value = '';
-        option.textContent = t`No group chats yet`;
+        option.textContent = t`No world groups yet`;
         select.appendChild(option);
         return;
     }
 
-    for (const group of groups) {
+    for (const group of worldGroups) {
         const option = document.createElement('option');
         option.value = group.id;
         // A world's group is named after its world, so the name says both.
@@ -2880,7 +2832,7 @@ function renderGroupSelect() {
     select.value = getSettingsGroupId();
 }
 
-/** Says whether the group being edited is a world's group. */
+/** Says what the drawer's group is, or why there is none. */
 function renderWorldRow() {
     const status = document.getElementById('gr_world_status');
 
@@ -2888,12 +2840,9 @@ function renderWorldRow() {
         return;
     }
 
-    const group = getSettingsGroup();
-    const world = group ? getGroupWorld(group.id) : '';
-
-    status.textContent = !group ? t`No group chats yet. Every world (a lorebook marked by the Character Editor) gets its own group.`
-        : world ? t`A world's group: its members are the world's cards, and they join and leave with the world. Mute and unmute them from the panel.`
-            : t`An ordinary group: its members are managed in SillyTavern's group settings. Every world gets its own group.`;
+    status.textContent = getSettingsGroup()
+        ? t`A world's group: its members are the world's cards, and they join and leave with the world. Mute and unmute them from the panel.`
+        : t`No world groups yet. Every world (a lorebook made a world in the Character Editor) gets its own group once it has a card; layouts and the Author's Note belong to those groups.`;
 }
 
 /** @returns {Layout|null} The layout the settings drawer edits. */
@@ -4271,7 +4220,6 @@ jQuery(async () => {
 
     eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
     eventSource.on(event_types.GROUP_CHAT_CREATED, openSceneFromLayout);
-    eventSource.on(event_types.APP_READY, pruneOrphanStages);
     eventSource.on(event_types.APP_READY, () => refreshWorlds());
     document.addEventListener('visibilitychange', onBackToTab);
     // A card's world can change in ST too (and a deleted card leaves its world).
