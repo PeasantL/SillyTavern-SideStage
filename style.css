@@ -13,10 +13,19 @@
     --ss-column-top: var(--topBarBlockSize, 40px);
 }
 
-/* One fixed column on the right edge, from under ST's top bar to the bottom of
-   the screen, holding SideStage's sections stacked as one panel: the roster
-   (or the gallery, which takes its place while open) above, the image below.
-   Fixed furniture: nothing in it can be dragged or resized.
+/* One fixed column on the right edge, spanning exactly what the chat column
+   does — #sheld's top to the bottom of the message box, measured into
+   --ss-strip-top and --ss-strip-height by index.js (measureStrip()), with a
+   full-height column as the fallback until then. It holds SideStage's sections
+   stacked as one panel: the roster (or the gallery, which takes its place
+   while open) above, the image slot below. Fixed furniture: nothing in it can
+   be dragged or resized.
+
+   The image slot is kept whether or not there is an image to show: a fixed
+   3:4 portrait at the strip's width, capped at 60% of its height, reserved as
+   padding. The roster and its footer end at the same line either way, rather
+   than the footer dropping to the bottom whenever a character has no images
+   or jumping with each image's shape. Images letterbox inside it.
 
    Dressed as ST's own chat column (#chat, #send_form): the theme's blur tint,
    blur strength, border colour and text colour, so it follows whatever theme
@@ -34,10 +43,14 @@
 .ss-strip {
     position: fixed;
     right: 0;
-    top: var(--ss-column-top);
+    top: var(--ss-strip-top, var(--ss-column-top));
     height: calc(100vh - var(--ss-column-top));
-    height: calc(100dvh - var(--ss-column-top));
+    height: var(--ss-strip-height, calc(100dvh - var(--ss-column-top)));
     width: var(--ss-column);
+    --ss-image-slot: min(calc((var(--ss-column) - 1px) * 4 / 3),
+                         calc(var(--ss-strip-height, 100dvh) * 0.6));
+    box-sizing: border-box;
+    padding-bottom: var(--ss-image-slot);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -56,9 +69,8 @@ body.PWA .ss-strip {
     --ss-column-top: calc(var(--topBarBlockSize, 40px) + var(--safeTop, 0px));
 }
 
-/* Section order is fixed here rather than by which opened first. The gallery
-   replaces the roster while it is open; the image always sits at the bottom,
-   on a rule of its own so the sections read as one panel. */
+/* The gallery replaces the roster while it is open; either fills the strip
+   down to the image slot, closed off by a rule along the slot's top edge. */
 .ss-section {
     display: flex;
     flex-direction: column;
@@ -67,23 +79,14 @@ body.PWA .ss-strip {
 
 .gr-panel,
 .civ-gallery {
-    order: 1;
     flex: 1 1 auto;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
 }
 
 .ss-strip:has(.civ-gallery) .gr-panel {
     display: none;
 }
 
-.civ-viewer {
-    order: 2;
-    flex: 0 0 auto;
-    margin-top: auto;
-}
-
-.ss-strip:has(.gr-panel, .civ-gallery) .civ-viewer {
-    border-top: 1px solid var(--SmartThemeBorderColor);
-}
 
 /* ST's zoomed avatar — click an avatar in the chat — is absolutely positioned
    and lands in the same corner as the strip on any theme that moves it right.
@@ -131,7 +134,7 @@ body.ss-tablet .drawer-content {
    absolute so it is placed against the viewport, as the strip is. */
 body.ss-tablet:not(.waifuMode) .zoomed_avatar {
     position: fixed;
-    top: var(--ss-column-top);
+    top: var(--ss-strip-top, var(--ss-column-top));
     right: 0;
     left: auto;
     transform: none;
@@ -605,15 +608,14 @@ body.ss-tablet:not(.waifuMode) .zoomed_avatar {
 }
 
 /* ── IMAGE section ── */
-/* The strip's bottom section, full strip width. Its height follows the image
-   through aspect-ratio, set from index.js once the image has loaded, so the
-   image fills it edge to edge; the cap keeps a tall image from crowding the
-   roster out, and object-fit letterboxes it inside the cap. */
+/* Fills the strip's image slot (the strip's bottom padding, see The strip).
+   object-fit letterboxes an image whose shape differs from the slot's. */
 .civ-viewer {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 3 / 4;
-  max-height: 60%;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--ss-image-slot);
   background-color: var(--black30a);
 }
 

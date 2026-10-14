@@ -2625,6 +2625,8 @@ function mountInStrip(html) {
     let $strip = $(`#${STRIP_ID}`);
     if (!$strip.length) {
         $strip = $(`<div id="${STRIP_ID}" class="ss-strip"></div>`).appendTo('body');
+        // Catches a #sheld that moved without resizing (a class toggled on body).
+        measureStrip();
     }
     return $(html).appendTo($strip);
 }
@@ -2634,6 +2636,43 @@ function pruneStrip() {
     if ($strip.length && !$strip.children('.ss-section').length) {
         $strip.remove();
     }
+}
+
+// The strip spans exactly what the chat column does: from #sheld's top to the
+// bottom of the message box. Measured rather than restated in CSS, because
+// core sizes #sheld differently per platform — on iOS the home-screen app pads
+// its bottom by the home indicator's inset (15px at least), and a strip run to
+// the screen's edge overshot the message box by that much. Layout offsets and
+// computed styles, never getBoundingClientRect(), which iOS reports against
+// the visual viewport while the toolbar animates. Written to custom
+// properties on <html>; style.css falls back to a full-height column until
+// the first measurement lands.
+function measureStrip() {
+    const sheld = document.getElementById('sheld');
+    const form = document.getElementById('form_sheld');
+    if (!sheld || !form || !sheld.offsetHeight) {
+        return;
+    }
+    const top = parseFloat(getComputedStyle(sheld).top);
+    const height = sheld.clientTop + form.offsetTop + form.offsetHeight;
+    const root = document.documentElement.style;
+    root.setProperty('--ss-strip-top', `${Number.isFinite(top) ? top : sheld.offsetTop}px`);
+    root.setProperty('--ss-strip-height', `${height}px`);
+}
+
+// #sheld changes size on rotation, on a theme or chat-width change, and when
+// the message box grows a line; observing both covers them all.
+function watchStrip() {
+    const sheld = document.getElementById('sheld');
+    const form = document.getElementById('form_sheld');
+    if (!sheld || !form) {
+        return;
+    }
+    const observer = new ResizeObserver(() => measureStrip());
+    observer.observe(sheld);
+    observer.observe(form);
+    window.addEventListener('resize', measureStrip);
+    measureStrip();
 }
 
 function isPanelOpen() {
@@ -3891,14 +3930,6 @@ function closeAllWindows() {
   pruneStrip();
 }
 
-// The section is as wide as the strip; its height follows the image through
-// CSS aspect-ratio (capped in style.css), so a portrait image is never
-// letterboxed inside a landscape frame.
-function fitViewerToRatio(ratio) {
-  if (!viewerState || !(ratio > 0)) return;
-  viewerState.$win.css("aspect-ratio", String(ratio));
-}
-
 // Reads the live list off viewerState so a refreshed list is actually used.
 function updateImage(newIndex) {
   if (!viewerState) return;
@@ -3915,7 +3946,7 @@ function updateImage(newIndex) {
 }
 
 // ──────────────────────────────────────────────
-//  SINGLETON viewer: the strip's image section, full strip width.
+//  SINGLETON viewer: the strip's image slot, a fixed size (style.css).
 //  If it already exists, just switch the image.
 // ──────────────────────────────────────────────
 function spawnSingleImageWindow(startIndex, allImages) {
@@ -3968,12 +3999,8 @@ function spawnSingleImageWindow(startIndex, allImages) {
     failures: 0,
   };
 
-  // The image itself reports its shape, so there is no separate probe to race
-  // a later navigation: whatever loaded is what is on screen.
   $img.on("load", () => {
-    if (!viewerState) return;
-    viewerState.failures = 0;
-    fitViewerToRatio($img[0].naturalWidth / $img[0].naturalHeight);
+    if (viewerState) viewerState.failures = 0;
   });
   // Skip past dead links instead of showing a broken image.
   $img.on("error", () => {
@@ -4299,6 +4326,7 @@ function watchTablet() {
 jQuery(async () => {
     stretchMobileLayout();
     watchTablet();
+    watchStrip();
     getSettings();
     // Before addSettings(), which paints the image checkboxes from it.
     loadImageSettings(getSTContext());
