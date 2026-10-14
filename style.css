@@ -132,6 +132,42 @@ body.ss-tablet .drawer-content {
     right: auto;
 }
 
+/* Drawers end where the chat column does — level with the bottom of the
+   message box, the same span the strip takes (--ss-strip-height, measured by
+   index.js). Core leaves them to two competing rules: its mobile block's
+   100dvh - 45px, which ran the tall ones (Advanced Formatting, World Info,
+   User Settings) past the message box, and its iOS block's 100dvh - 70px,
+   which left the two side panels short of it. The fallback is the former,
+   for the moment before the first measurement. */
+body.ss-tablet .drawer-content {
+    max-height: var(--ss-strip-height, calc(100dvh - 45px));
+}
+
+/* The side panels (presets on the left, characters on the right) are a fixed
+   height rather than their content's, so they take the full span. By id, as
+   core's iOS block caps their max-height by id. Open only: core animates them
+   from height 0 on :not(.openDrawer). */
+body.ss-tablet #left-nav-panel.openDrawer,
+body.ss-tablet #right-nav-panel.openDrawer {
+    height: var(--ss-strip-height, calc(100dvh - 45px));
+    max-height: var(--ss-strip-height, calc(100dvh - 45px));
+}
+
+/* Core's iOS block (@supports (-webkit-touch-callout: none)) sizes
+   #world_popup as if it were a drawer of its own: the screen's full width,
+   100dvh - 70px tall and 36px down. It is the content inside the World Info
+   drawer, so it overflowed the drawer both ways, scrolling sideways and
+   running past the message box. Here it takes the drawer's width and its own
+   height, and the drawer scrolls it. user.css's tablet block used to unset
+   the same width and height. */
+body.ss-tablet #world_popup {
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: none;
+    margin-top: 0;
+}
+
 /* Core's mobile block centres the zoomed avatar on screen, over the chat.
    Here it opens in the column instead, at the strip's top and width, covering
    the strip until it is closed (z-index above). Fixed rather than core's
