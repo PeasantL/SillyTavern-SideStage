@@ -104,6 +104,16 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 - **Gallery**: A thumbnail grid of every image found, reached from the viewer's gallery button. It takes the roster's place in the strip until closed.
 - **Chat-Aware Cleanup**: Closing a chat closes the viewer and gallery.
 
+### Card Editor lock
+
+One setting, on by default: **Lock what the Card Editor manages**. The [Character Card Editor](https://github.com/PeasantL/character-editor) owns cards, worlds' lorebooks and their groups, so with the lock on SillyTavern can't change them behind its back. The controls stay where they are, greyed out like SillyTavern's own unavailable settings, and say where to go instead when clicked.
+
+- **Card fields**: Name, description, greetings, alternate greetings, tags, avatar, favourite, talkativeness and the advanced definitions are read-only while a card is open (creating a new card is untouched).
+- **Card actions**: Import (button, external URL, files or links dropped on the page), rename, duplicate, delete, *Link to World Info*, *Import Card Lore* and *Replace / Update*, and the `/rename-char`, `/char-delete`, `/char-duplicate` and `/char-update` commands.
+- **Worlds**: Renaming, duplicating and deleting a world's lorebook in the World Info editor (ordinary lorebooks are untouched).
+- **World groups**: Deleting a world's group, and adding or removing its members (also `/member-add`, `/member-remove`). Muting stays free.
+- **Saves**: SillyTavern still saves which chat a card last used, but only that, merged into the card file as it is now, instead of writing its whole (possibly stale) copy of the card over the editor's changes.
+
 ## 📥 Installation
 
 1. Open **SillyTavern**.
@@ -125,10 +135,11 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   **Spell check** and **OOC** read the message box, so type there first.
 - **Open the gallery**: The gallery button in the image's top-right corner.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
-- **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
+- **Settings**: Extensions panel → **SideStage**. One drawer, five sections:
   - *Group* — choose which world's group you're editing; ⟳ syncs the world groups; edit its Author's Note.
   - *Greeting layouts* — add, rename and delete layouts; set the narrator, the note override, who is in the scene and their turns.
   - *Rewrite* — what the **Morality** and **Scene** buttons ask.
+  - *Card Editor* — the lock.
   - *Images* — *Open the viewer automatically on character select* and *Change with Greeting*.
 
 ## 🧪 Tests

@@ -61,6 +61,7 @@ import * as worldInfo from '../../../world-info.js';
 import { waitUntilCondition, uuidv4, getSortableDelay } from '../../../utils.js';
 import { t } from '../../../i18n.js';
 import { Popup } from '../../../popup.js';
+import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 
 // ═══════════════════════ Group roster ═══════════════════════
 
@@ -133,6 +134,13 @@ const rosterDefaults = {
      */
     moralityRequest: 'Describe the evil of the current scene in detail.',
     sceneRequest: 'Describe the current scene in detail.',
+    /**
+     * Locks what the Character Editor manages (see the Card Editor lock):
+     * card fields, import, rename, duplicate and delete, and worlds' lorebooks
+     * and groups. The controls stay, greyed out.
+     * @type {boolean}
+     */
+    lockManaged: true,
 };
 
 /**
@@ -766,6 +774,7 @@ function refreshWorlds({ reload = false } = {}) {
             refreshingWorlds = null;
             renderSettings();
             refreshPanel();
+            applyLock();
         }
     })();
 
@@ -2849,6 +2858,19 @@ const settingsHtml = `
             <div class="ss-settings-divider"></div>
 
             <div class="ss-settings-section">
+                <div class="ss-settings-heading">Card Editor</div>
+                <div class="ss-settings-toggles">
+                    <label class="checkbox_label" for="ss_lock_managed" title="Greys out what the Character Editor manages, so SillyTavern can't change it behind the editor's back: card fields, avatar, favourite and lorebook link; import, rename, duplicate and delete; renaming, duplicating and deleting a world's lorebook; deleting a world's group and adding or removing its members.">
+                        <input id="ss_lock_managed" type="checkbox">
+                        <span>Lock what the Card Editor manages</span>
+                    </label>
+                </div>
+                <small class="ss-settings-hint">Saves SillyTavern still makes (which chat a card last used) only write that, never a whole card over the editor's changes.</small>
+            </div>
+
+            <div class="ss-settings-divider"></div>
+
+            <div class="ss-settings-section">
                 <div class="ss-settings-heading">Images</div>
                 <div class="ss-settings-toggles">
                     <label class="checkbox_label" for="civ-auto-open" title="Opens the floating viewer whenever a character or group with images is selected. With this off there is no way to open the viewer, since the gallery is reached from it.">
@@ -3322,6 +3344,14 @@ function addSettings() {
             pullWorldStage(world).catch(error => console.error('[SideStage] Could not read the world\'s layouts', error));
         }
     });
+
+    $('#ss_lock_managed')
+        .prop('checked', !!getSettings().lockManaged)
+        .on('change', function () {
+            getSettings().lockManaged = !!$(this).prop('checked');
+            saveSettingsDebounced();
+            applyLock();
+        });
 
     // Image half of the same drawer.
     $('#civ-auto-open')
@@ -4113,6 +4143,202 @@ function watchTablet() {
     apply();
 }
 
+// ═════════════════════ Card Editor lock ═════════════════════
+
+/*
+ * The Character Editor owns cards, worlds' lorebooks and their groups: it
+ * names media after the card file, keeps world membership in the lorebook and
+ * backs up and trashes what it changes. Done in SillyTavern instead, these
+ * break that (a rename moves the file, a delete skips the trash, a duplicate
+ * shares the original's media), and SillyTavern's card save writes back its
+ * whole copy of the card, loaded before the editor's last save. With the lock
+ * on, those controls stay where they are but greyed out, like SillyTavern's
+ * own unavailable settings, and do nothing.
+ */
+
+/** Card-panel controls locked while a card is being edited (not created). Some ids are on a button and a More… option both. */
+const LOCKED_CARD_CONTROLS = '[id="renameCharButton"], [id="dupe_button"], [id="delete_button"], #favorite_button, #world_button, '
+    + '[id="set_character_world"], #import_character_info, #replace_update, .open_alternate_greetings';
+const LOCKED_IMPORT = '#character_import_button, #external_import_button, .external_import_button';
+const LOCKED_WORLD_CONTROLS = '#world_popup_name_button, #world_duplicate, #world_popup_delete';
+const LOCKED_GROUP_CONTROLS = '#rm_group_delete, #rm_group_members [data-action="remove"], #rm_group_add_members [data-action="add"]';
+/** Drop targets that take files for themselves (chat attachments, chat import, popups); a drop anywhere else imports cards. */
+const OWN_DROP_TARGETS = '#form_sheld, #select_chat_popup, .popup';
+/** Slash commands locked like their buttons; member ones only in a world's group. */
+const LOCKED_COMMANDS = ['rename-char', 'char-delete', 'char-duplicate', 'char-update'];
+const LOCKED_MEMBER_COMMANDS = ['member-add', 'member-remove'];
+
+function isLocked() {
+    return !!getSettings().lockManaged;
+}
+
+/** @returns {boolean} Whether the card panel is editing a saved card (not creating one). */
+function isEditingCard() {
+    return $('#form_create').attr('actiontype') === 'editcharacter';
+}
+
+/** @returns {boolean} Whether the World Info editor has a world's lorebook open. */
+function isWorldInEditor() {
+    const name = $('#world_editor_select option:selected').text();
+    return !!name && worldLorebooks.has(name);
+}
+
+/** @returns {boolean} Whether the group panel has a world's group open. */
+function isWorldGroupOpen() {
+    return !!openGroupId && !!getGroupWorld(openGroupId);
+}
+
+/**
+ * Greys out the locked controls, or lets them go. Fields are disabled, which
+ * also drops them from SillyTavern's card save; that is safe because the save
+ * itself is cut down to the chat it records while locked (see lockedFetch()).
+ */
+function applyLock() {
+    const locked = isLocked();
+    const fields = locked && isEditingCard();
+    const form = /** @type {HTMLFormElement|null} */ (document.getElementById('form_create'));
+
+    for (const el of form ? Array.from(form.elements) : []) {
+        // Not the hidden fields or the submit button: SillyTavern's save still runs, cut down.
+        if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) || ['hidden', 'submit', 'button'].includes(el.type)) {
+            continue;
+        }
+        if (fields && !el.disabled) {
+            el.disabled = true;
+            el.dataset.ssLocked = '';
+        } else if (!fields && el.dataset.ssLocked !== undefined) {
+            el.disabled = false;
+            delete el.dataset.ssLocked;
+        }
+    }
+
+    $('#char-management-dropdown option').filter(LOCKED_CARD_CONTROLS).prop('disabled', fields);
+    document.body.classList.toggle('ss-lock-card', fields);
+    document.body.classList.toggle('ss-lock', locked);
+    document.body.classList.toggle('ss-lock-world', locked && isWorldInEditor());
+    document.body.classList.toggle('ss-lock-group', locked && isWorldGroupOpen());
+}
+
+/**
+ * Why a click on this element is locked, or ''.
+ * @param {Element} el
+ * @returns {string}
+ */
+function lockedReason(el) {
+    if (!isLocked()) {
+        return '';
+    }
+    if (el.closest(LOCKED_IMPORT)) {
+        return t`Import cards in the Card Editor.`;
+    }
+    if (isEditingCard() && el.closest(LOCKED_CARD_CONTROLS)) {
+        return t`This card is managed by the Card Editor; change it there.`;
+    }
+    if (isWorldInEditor() && el.closest(LOCKED_WORLD_CONTROLS)) {
+        return t`This lorebook is a world; rename, duplicate or delete it in the Card Editor.`;
+    }
+    if (isWorldGroupOpen() && el.closest(LOCKED_GROUP_CONTROLS)) {
+        return t`SideStage keeps this world's group in step with its cards; change the world in the Card Editor.`;
+    }
+    return '';
+}
+
+function toastLocked(reason) {
+    toastr.info(reason, t`Locked by SideStage`, { preventDuplicates: true });
+}
+
+/**
+ * SillyTavern's card save (/api/characters/edit) sends its whole copy of the
+ * card. While locked nothing in it can have been changed here except which
+ * chat the card last used, so only that is written, merged into the file as
+ * it is now. SillyTavern then reloads the card from the file, as after any save.
+ */
+function watchCardSaves() {
+    const nativeFetch = window.fetch;
+
+    window.fetch = function (input, init) {
+        const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+
+        if (isLocked() && url.pathname === '/api/characters/edit' && init?.body instanceof FormData) {
+            const body = { avatar: String(init.body.get('avatar_url') ?? ''), chat: String(init.body.get('chat') ?? '') };
+            return nativeFetch.call(window, '/api/characters/merge-attributes', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify(body),
+            });
+        }
+
+        return nativeFetch.call(window, input, init);
+    };
+}
+
+/** Wraps the locked slash commands, so they report the lock instead of running. */
+function lockCommands() {
+    const wrap = (name, when) => {
+        const command = SlashCommandParser.commands[name];
+
+        if (!command || command.ssLocked) {
+            return;
+        }
+
+        const callback = command.callback;
+        command.callback = function (...args) {
+            if (isLocked() && when()) {
+                toastLocked(t`/${name} is locked: SideStage leaves this to the Card Editor.`);
+                return '';
+            }
+            return callback.apply(this, args);
+        };
+        command.ssLocked = true;
+    };
+
+    LOCKED_COMMANDS.forEach(name => wrap(name, () => true));
+    LOCKED_MEMBER_COMMANDS.forEach(name => wrap(name, () => !!selected_group && !!getGroupWorld(selected_group)));
+}
+
+function watchLock() {
+    // Capture phase: ahead of SillyTavern's own handlers, including clicks
+    // made from the keyboard, which the greyed-out styling doesn't stop.
+    document.addEventListener('click', (e) => {
+        const reason = e.target instanceof Element ? lockedReason(e.target) : '';
+
+        if (reason) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            toastLocked(reason);
+        }
+    }, true);
+
+    // A file or link dropped on the page imports it as a card (text dropped in a field is left alone).
+    window.addEventListener('drop', (e) => {
+        const target = e.target instanceof Element ? e.target : null;
+        const types = Array.from(e.dataTransfer?.types ?? []);
+        const card = types.includes('Files') || types.includes('text/uri-list');
+
+        if (isLocked() && card && !target?.closest(OWN_DROP_TARGETS)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            toastLocked(t`Import cards in the Card Editor.`);
+        }
+    }, true);
+
+    // The card panel switches between editing and creating by this attribute.
+    const form = document.getElementById('form_create');
+    if (form) {
+        new MutationObserver(applyLock).observe(form, { attributes: true, attributeFilter: ['actiontype'] });
+    }
+
+    // The group panel prints its members afresh for each group it opens.
+    const members = document.getElementById('rm_group_members');
+    if (members) {
+        new MutationObserver(applyLock).observe(members, { childList: true });
+    }
+
+    $(document).on('change', '#world_editor_select', applyLock);
+    watchCardSaves();
+    applyLock();
+}
+
 // ═══════════════════════════ Boot ═══════════════════════════
 
 jQuery(async () => {
@@ -4126,10 +4352,16 @@ jQuery(async () => {
     addWandButton();
     mountAssistBar();
     watchManualNoteEdits();
+    watchLock();
 
     eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
     eventSource.on(event_types.GROUP_CHAT_CREATED, openSceneFromLayout);
     eventSource.on(event_types.APP_READY, () => refreshWorlds());
+    eventSource.on(event_types.APP_READY, lockCommands);
+    // A group or lorebook may have become (or stopped being) a world's, and the panels open on new ones.
+    eventSource.on(event_types.CHAT_CHANGED, applyLock);
+    eventSource.on(event_types.GROUP_UPDATED, applyLock);
+    eventSource.on(event_types.WORLDINFO_UPDATED, applyLock);
     document.addEventListener('visibilitychange', onBackToTab);
     // A card's world can change in ST too (and a deleted card leaves its world).
     eventSource.on(event_types.CHARACTER_EDITED, syncWorldGroupsSoon);
