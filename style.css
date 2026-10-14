@@ -74,12 +74,6 @@
     z-index: 500;
 }
 
-/* The home-screen app's top bar is taller by the status bar (user.css sets
-   --safeTop under body.PWA); without it the fallback keeps this a no-op. */
-body.PWA .ss-strip {
-    --ss-column-top: calc(var(--topBarBlockSize, 40px) + var(--safeTop, 0px));
-}
-
 /* The gallery replaces the roster while it is open; either fills the strip
    down to the image slot, closed off by a rule along the slot's top edge. */
 .ss-section {
