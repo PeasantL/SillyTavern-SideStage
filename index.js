@@ -3634,6 +3634,12 @@ function getSpawnTop(height) {
   return Math.max(0, window.innerHeight - height - 24);
 }
 
+// The right-hand column's width, so the viewer spawns exactly as wide as the
+// dock above it. Mirrors --ss-column in style.css: max(220px, 20dvw).
+function columnWidth() {
+  return Math.max(220, window.innerWidth * 0.2);
+}
+
 // Where a window is *meant* to sit, so a viewport change can be re-applied from
 // the intent rather than from wherever the element currently happens to be.
 const ANCHOR_KEY = "civAnchor";
@@ -3882,8 +3888,8 @@ function spawnGalleryWindow(images, charName) {
       <div id="${GALLERY_ID}" class="civ-window-standard ss-dock">
           <div class="civ-header">
               <span>Gallery: ${escapeHtml(charName)} (${images.length})</span>
-              <span class="civ-close-btn" role="button" tabindex="0" aria-label="Close gallery"
-                    title="Close" style="cursor:pointer; color:#ff6b6b;">✖</span>
+              <div class="civ-close-btn gr-header-btn fa-solid fa-circle-xmark fa-fw interactable"
+                   role="button" tabindex="0" aria-label="Close gallery" title="Close"></div>
           </div>
           <div class="civ-gallery-body">
               <div class="civ-gallery-grid">${gridHtml}</div>
@@ -4036,10 +4042,11 @@ function spawnSingleImageWindow(startIndex, allImages) {
     const aspectRatio = natW / natH;
 
     // ── Position & Size ──────────────────────────
-    // Preferred width 20vw, capped so neither dimension can leave the viewport.
+    // Preferred width is the dock's column, capped so neither dimension can
+    // leave the viewport.
     const maxH = window.innerHeight * 0.5;
     const maxW = window.innerWidth * 0.9;
-    let winW = Math.min(window.innerWidth * 0.2, maxW);
+    let winW = Math.min(columnWidth(), maxW);
     let winH = winW / aspectRatio;
 
     if (winH > maxH) {
@@ -4420,9 +4427,55 @@ function initImages() {
   handleContextChange();
 }
 
+// ══════════════════════ Tablet layout ═══════════════════════
+
+// Any iPad, in either orientation: a touch screen at least 744px both ways (an
+// iPad mini is 744 wide in portrait), up to 1420px wide. Phones fail the
+// height or the width, and a mouse-driven desktop window fails the pointer, so
+// neither is touched however narrow it gets.
+const TABLET_QUERY = '(pointer: coarse) and (min-width: 744px) and (min-height: 744px) and (max-width: 1420px)';
+
+// Core's touch layout lives in one @media block in mobile-styles.css that
+// stops at 1000px, so an iPad gets it in portrait and loses it in landscape.
+// A copy of that block under the tablet query is inserted straight after it,
+// at page load, from core's live rules — so it keeps up with SillyTavern
+// updates, where a hand-made copy (what user.css used to carry) goes stale: it
+// had already missed the background-folder and multi-select rules added since
+// it was taken. Sitting right after the original keeps its place in the
+// cascade.
+//
+// Inserted rather than adding the query to the original's media list: Safari
+// did not apply a media list edited in place, and insertRule always restyles.
+// Found by its width rather than its exact text, which engines serialise
+// differently; the landscape-only block is skipped by its orientation.
+function stretchMobileLayout() {
+    const sheet = [...document.styleSheets].find(s => s.href?.endsWith('/css/mobile-styles.css'));
+    const rules = sheet ? [...sheet.cssRules] : [];
+    const index = rules.findIndex(rule => rule instanceof CSSMediaRule
+        && /max-width:\s*1000px/.test(rule.media.mediaText)
+        && !/orientation/.test(rule.media.mediaText));
+    if (index === -1) {
+        console.warn('[SideStage] Core touch layout not found; tablet landscape keeps the desktop layout.');
+        return;
+    }
+    const body = [...rules[index].cssRules].map(rule => rule.cssText).join('\n');
+    sheet.insertRule(`@media screen and ${TABLET_QUERY} {\n${body}\n}`, index + 1);
+}
+
+// body.ss-tablet gates the column reserve in style.css. Followed live, so
+// plugging in a mouse or a window change re-decides it.
+function watchTablet() {
+    const tablet = window.matchMedia(TABLET_QUERY);
+    const apply = () => document.body.classList.toggle('ss-tablet', tablet.matches);
+    tablet.addEventListener('change', apply);
+    apply();
+}
+
 // ═══════════════════════════ Boot ═══════════════════════════
 
 jQuery(async () => {
+    stretchMobileLayout();
+    watchTablet();
     getSettings();
     // Before addSettings(), which paints the image checkboxes from it.
     loadImageSettings(getSTContext());
