@@ -60,6 +60,10 @@
     color: var(--SmartThemeBodyColor);
     border-left: 1px solid var(--SmartThemeBorderColor);
     border-bottom: 1px solid var(--SmartThemeBorderColor);
+    /* The bottom-left corner rounds like the message box's beside it (core's
+       #send_form, read by measureStrip()); overflow: hidden clips the image
+       to it. */
+    border-bottom-left-radius: var(--ss-strip-radius, 10px);
     z-index: 500;
 }
 

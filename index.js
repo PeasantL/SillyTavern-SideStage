@@ -2644,9 +2644,10 @@ function pruneStrip() {
 // its bottom by the home indicator's inset (15px at least), and a strip run to
 // the screen's edge overshot the message box by that much. Layout offsets and
 // computed styles, never getBoundingClientRect(), which iOS reports against
-// the visual viewport while the toolbar animates. Written to custom
-// properties on <html>; style.css falls back to a full-height column until
-// the first measurement lands.
+// the visual viewport while the toolbar animates. The message box's rounded
+// bottom corner is read too, so the strip's matching corner follows a theme
+// that changes it. Written to custom properties on <html>; style.css falls
+// back to a full-height column until the first measurement lands.
 function measureStrip() {
     const sheld = document.getElementById('sheld');
     const form = document.getElementById('form_sheld');
@@ -2658,6 +2659,10 @@ function measureStrip() {
     const root = document.documentElement.style;
     root.setProperty('--ss-strip-top', `${Number.isFinite(top) ? top : sheld.offsetTop}px`);
     root.setProperty('--ss-strip-height', `${height}px`);
+    const sendForm = document.getElementById('send_form');
+    if (sendForm) {
+        root.setProperty('--ss-strip-radius', getComputedStyle(sendForm).borderBottomLeftRadius);
+    }
 }
 
 // #sheld changes size on rotation, on a theme or chat-width change, and when
