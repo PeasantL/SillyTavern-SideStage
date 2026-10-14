@@ -56,6 +56,9 @@ import {
     DEFAULT_AUTO_MODE_DELAY,
 } from '../../../group-chats.js';
 import { saveWorldInfo } from '../../../world-info.js';
+// Read as a namespace, so a SillyTavern without worldInfoCache or reloadEditor
+// still loads SideStage (see refreshCachedLorebooks()).
+import * as worldInfo from '../../../world-info.js';
 import { waitUntilCondition, uuidv4, getSortableDelay } from '../../../utils.js';
 import { t } from '../../../i18n.js';
 import { Popup } from '../../../popup.js';
@@ -87,9 +90,8 @@ let focusedAvatar = null;
  *     this layout alone (it follows on from the turns before it), so it lives here rather than in the card.
  *     Blank posts nothing.
  *
- * Layouts saved before turns were kept in the layout have no `text`, and pinned one of the card's group
- * greetings instead: `greets` (whether it posted at all), `greeting` (an index into its group greetings, or null
- * for random) and `greetingKey`. getTurnText() still reads those, and the first edit to the entry replaces them.
+ * Layouts saved before turns were kept in the layout pinned one of the card's group greetings instead; they are
+ * converted once at start-up (convertOldTurns()).
  */
 
 /**
@@ -332,50 +334,106 @@ function getLayoutEntry(layout, avatar) {
 }
 
 /**
- * Writes part of a card's layout entry back, creating it if needed. An entry
- * still in the old pinned form gets its turn's text first, so the pin's
- * greeting carries over.
+ * Writes part of a card's layout entry back, creating it if needed.
  * @param {string} groupId Group whose stage holds the layout
  * @param {Layout} layout
  * @param {string} avatar
  * @param {Partial<LayoutEntry>} patch
  */
 function setLayoutEntry(groupId, layout, avatar, patch) {
-    const entry = { ...getLayoutEntry(layout, avatar) };
-    const character = getCharacterByAvatar(avatar);
-
-    // A shallow card has no greetings loaded to read the pin from; keep the
-    // pin until it can be, rather than turning it into a blank turn.
-    if (typeof entry.text !== 'string' && !character?.shallow) {
-        entry.text = getTurnText(entry, character);
-        delete entry.greets;
-        delete entry.greeting;
-        delete entry.greetingKey;
-    }
-
-    Object.assign(entry, patch);
-    layout.cards[avatar] = entry;
+    layout.cards[avatar] = { ...getLayoutEntry(layout, avatar), ...patch };
     saveStage(groupId);
 }
 
 /**
- * A card's turn in a layout's opening: its own text, or for an entry from
- * before turns were kept in the layout, the group greeting it pinned (blank
- * when it didn't greet or greeted at random).
+ * A card's turn in a layout's opening (blank: it posts nothing).
  * @param {LayoutEntry} entry
- * @param {object} [character]
  * @returns {string}
  */
-function getTurnText(entry, character) {
-    if (typeof entry.text === 'string') {
-        return entry.text;
+function getTurnText(entry) {
+    return typeof entry.text === 'string' ? entry.text : '';
+}
+
+// #region Old layouts
+
+const OLD_ENTRY_KEYS = ['greets', 'greeting', 'greetingKey'];
+
+/**
+ * Converts layout entries from before 3.1, which pinned one of the card's
+ * group greetings ({active, greets, greeting, greetingKey}), into entries that
+ * hold their own turn ({active, text}): the pinned greeting's text, or blank
+ * for a card that didn't greet or greeted at random. Runs once at start-up
+ * over every stage SideStage holds; the Character Editor converts the worlds'
+ * lorebooks the same way (worlds.migrate_stage) when it opens the folder. This
+ * region goes once nobody has layouts that old.
+ */
+async function convertOldTurns() {
+    const stages = [
+        ...Object.values(getSettings().groups).map(stage => [stage, () => saveSettingsDebounced()]),
+        ...[...worldStages].map(([world, stage]) => [stage, () => saveWorldStageDebounced(world)]),
+    ];
+
+    for (const [stage, save] of stages) {
+        let changed = false;
+
+        for (const layout of stage.layouts) {
+            for (const [avatar, entry] of Object.entries(layout.cards)) {
+                if (!entry || typeof entry !== 'object'
+                    || (typeof entry.text === 'string' && !OLD_ENTRY_KEYS.some(key => key in entry))) {
+                    continue;
+                }
+
+                const text = typeof entry.text === 'string' ? entry.text : await getPinnedText(entry, avatar);
+
+                if (text === null) {
+                    continue;
+                }
+
+                const converted = { ...entry, active: entry.active === true, text };
+                OLD_ENTRY_KEYS.forEach(key => delete converted[key]);
+                layout.cards[avatar] = converted;
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            save();
+        }
     }
 
+    renderSettings();
+}
+
+/**
+ * The text of the group greeting an old entry pinned: '' when it didn't greet,
+ * greeted at random, or its pin no longer resolves; null when the card's
+ * greetings can't be loaded (left for the next start).
+ * @param {object} entry
+ * @param {string} avatar
+ * @returns {Promise<string|null>}
+ */
+async function getPinnedText(entry, avatar) {
     if (!entry.active || entry.greets === false) {
         return '';
     }
 
-    const pool = getGroupGreetings(character);
+    const chid = characters.findIndex(x => x.avatar === avatar);
+
+    if (chid === -1) {
+        return '';
+    }
+
+    try {
+        // A shallow card has no greetings loaded to read the pin from.
+        if (characters[chid].shallow) {
+            await unshallowCharacter(chid);
+        }
+    } catch (error) {
+        console.warn('[SideStage] Could not load a card to convert its old layout turn', avatar, error);
+        return null;
+    }
+
+    const pool = getGroupGreetings(characters[chid]);
     const pinned = resolvePin(entry, pool);
     return pinned === null ? '' : pool[pinned];
 }
@@ -383,7 +441,7 @@ function getTurnText(entry, character) {
 /**
  * The old pins' fingerprint of a greeting: FNV-1a (32-bit, hex) over its code
  * points, with runs of whitespace collapsed to one space and the ends trimmed.
- * Only read now, to find what an old pin pointed at (see getTurnText()).
+ * Only read now, to find what an old pin pointed at.
  * @param {string} text
  * @returns {string}
  */
@@ -422,7 +480,7 @@ function resolvePin(entry, pool) {
 }
 
 /**
- * A card's group greetings, as the old pins counted them (see getTurnText()).
+ * A card's group greetings, as the old pins counted them.
  *
  * Precedence matches Extension-GroupGreetings' own reader so both agree on
  * which list is in play: Spec v3 group_only_greetings, with the legacy
@@ -446,6 +504,8 @@ function getGroupGreetings(character) {
     }
     return [];
 }
+
+// #endregion
 
 /**
  * Drops stages whose group is gone. There is no group-deleted event — only
@@ -478,8 +538,9 @@ function pruneOrphanStages() {
 /**
  * Every world has its own group.
  *
- * A world is a lorebook the Character Editor has marked as one
- * (extensions.character_editor.world). Its cast is every card that links it
+ * A world is a lorebook carrying SideStage's key (extensions.sidestage; an
+ * empty object until its group is made), as the Character Editor marks it.
+ * Its cast is every card that links it
  * (data.extensions.world). SideStage creates a group for each world that has a
  * cast, named after it, and keeps it so: its members are exactly the world's
  * cards (they join and leave with the world), who is in the scene is who is
@@ -565,9 +626,15 @@ async function fetchWorld(name) {
     return data && typeof data === 'object' && data.entries ? data : null;
 }
 
-/** @returns {boolean} Whether a lorebook is marked as a world by the Character Editor. */
+/**
+ * Whether a lorebook is a world: it carries SideStage's key. Lorebooks the
+ * Character Editor marked the older way (extensions.character_editor.world)
+ * count too, until the editor has converted them.
+ * @returns {boolean}
+ */
 function isWorldLorebook(data) {
-    return Boolean(data?.extensions?.character_editor?.world);
+    const stage = data?.extensions?.[WORLD_KEY];
+    return Boolean((stage && typeof stage === 'object') || data?.extensions?.character_editor?.world);
 }
 
 /**
@@ -651,14 +718,21 @@ function stageRev(stage) {
 }
 
 /**
- * Writes a world's stage into its lorebook, or removes it when the world no
- * longer has one. Re-reads the file first and replaces only extensions.sidestage,
- * so entries and anything else edited elsewhere in the meantime are kept; a
- * stage saved there since it was read (by the Character Editor) is merged with
- * this one rather than overwritten.
+ * Writes a world's stage into its lorebook. Re-reads the file first and
+ * replaces only extensions.sidestage, so entries and anything else edited
+ * elsewhere in the meantime are kept; a stage saved there since it was read
+ * (by the Character Editor) is merged with this one rather than overwritten.
+ * A world SideStage holds no stage for is left alone: the key is what makes
+ * the lorebook a world, so it is never removed.
  * @param {string} world
  */
 async function writeWorldStage(world) {
+    const stage = worldStages.get(world);
+
+    if (!stage) {
+        return;
+    }
+
     const data = await fetchWorld(world);
 
     if (!data) {
@@ -666,41 +740,26 @@ async function writeWorldStage(world) {
     }
 
     const extensions = data.extensions && typeof data.extensions === 'object' ? data.extensions : {};
-    const stage = worldStages.get(world);
     const file = extensions[WORLD_KEY] && typeof extensions[WORLD_KEY] === 'object' ? extensions[WORLD_KEY] : null;
-    let written = null;
+    const base = worldBases.get(world);
+    const merge = Boolean(base && file && stageRev(file) !== stageRev(base));
 
-    if (stage) {
-        const base = worldBases.get(world);
-        const merge = Boolean(base && file && stageRev(file) !== stageRev(base));
-
-        if (merge) {
-            mergeStage(stage, base, file);
-        }
-
-        stage.rev = Math.max(stageRev(stage), stageRev(file)) + 1;
-        written = structuredClone(stage);
-        extensions[WORLD_KEY] = written;
-
-        if (merge) {
-            renderSettings();
-            refreshPanel();
-        }
-    } else {
-        delete extensions[WORLD_KEY];
+    if (merge) {
+        mergeStage(stage, base, file);
     }
 
-    if (Object.keys(extensions).length) {
-        data.extensions = extensions;
-    } else {
-        delete data.extensions;
+    stage.rev = Math.max(stageRev(stage), stageRev(file)) + 1;
+    const written = structuredClone(stage);
+    extensions[WORLD_KEY] = written;
+    data.extensions = extensions;
+
+    if (merge) {
+        renderSettings();
+        refreshPanel();
     }
 
     await saveWorldInfo(world, data, true);
-
-    if (written) {
-        worldBases.set(world, structuredClone(written));
-    }
+    worldBases.set(world, structuredClone(written));
 }
 
 /**
@@ -902,6 +961,7 @@ function refreshWorlds({ reload = false } = {}) {
             if (reload) {
                 await waitUntilCondition(() => !isGenerating(), 30000, 200);
                 await getCharacters();
+                await refreshCachedLorebooks();
             }
 
             await resolveWorlds();
@@ -1012,6 +1072,56 @@ async function ensureWorldGroups() {
     toastr.info(made.length === 1
         ? t`Created a group for the world "${made[0]}".`
         : t`Created groups for the worlds ${made.join(', ')}.`);
+}
+
+/**
+ * Takes lorebooks changed outside SillyTavern (in the Character Editor) since
+ * it read them. SillyTavern keeps every lorebook it has read for the whole page
+ * load: prompts use that copy, and its World Info editor saves the whole copy
+ * back on the next edit, over whatever changed in the file. So each lorebook it
+ * holds is compared with its file, and a changed one is replaced by the file's
+ * version (and reopened in the World Info editor if it is showing there).
+ * Does nothing on a SillyTavern that doesn't export worldInfoCache.
+ */
+async function refreshCachedLorebooks() {
+    const cache = worldInfo.worldInfoCache;
+
+    if (!cache || typeof cache.keys !== 'function') {
+        return;
+    }
+
+    for (const name of [...cache.keys()]) {
+        const data = await fetchWorld(name).catch(() => null);
+
+        if (!data || !cache.has(name) || JSON.stringify(data) === JSON.stringify(cache.get(name))) {
+            continue;
+        }
+
+        cache.set(name, data);
+
+        if (typeof worldInfo.reloadEditor === 'function') {
+            worldInfo.reloadEditor(name);
+        }
+    }
+}
+
+/**
+ * Back in the SillyTavern tab, maybe from the Character Editor: takes the
+ * lorebooks and the open group's layouts changed there meanwhile. A World Info
+ * edit made just before leaving the tab has been saved by then (ST saves it
+ * within a second), so its file already has it.
+ */
+function onBackToTab() {
+    if (document.visibilityState !== 'visible' || !worldsResolved) {
+        return;
+    }
+
+    refreshCachedLorebooks().catch(error => console.error('[SideStage] Could not refresh the lorebooks', error));
+    const world = getGroupWorld(selected_group);
+
+    if (world) {
+        pullWorldStage(world).catch(error => console.error('[SideStage] Could not read the world\'s layouts', error));
+    }
 }
 
 /**
@@ -1351,7 +1461,7 @@ async function openSceneFromLayout() {
             continue;
         }
 
-        messages.push(buildGreetingMessage(character, getTurnText(entry, character)));
+        messages.push(buildGreetingMessage(character, getTurnText(entry)));
     }
 
     // Defensive: the loop suppressed everything, so both should already be
@@ -2953,46 +3063,6 @@ function getSettingsLayout() {
     return getActiveLayout(getSettingsStage());
 }
 
-/** True while member cards are being loaded, so the repaint can't loop. */
-let loadingCardData = false;
-
-/**
- * A layout saved before turns were kept in the layout pins one of each card's
- * group greetings, and members of a group that isn't open are shallow, with no
- * greetings loaded to read the pin from: their turns would read as blank.
- * Loads them once and repaints.
- * @param {object|null} group
- * @param {Layout} layout
- */
-function ensureGreetingsLoaded(group, layout) {
-    if (loadingCardData || !group || !Object.values(layout.cards).some(x => typeof x.text !== 'string')) {
-        return;
-    }
-
-    const pending = (group.members ?? [])
-        .map(avatar => characters.findIndex(x => x.avatar === avatar))
-        .filter(chid => chid !== -1 && characters[chid]?.shallow);
-
-    if (!pending.length) {
-        return;
-    }
-
-    loadingCardData = true;
-
-    (async () => {
-        try {
-            for (const chid of pending) {
-                await unshallowCharacter(chid);
-            }
-        } catch (error) {
-            console.error('[SideStage] Could not load card data for the layout editor', error);
-        } finally {
-            loadingCardData = false;
-            renderLayoutCards();
-        }
-    })();
-}
-
 /** Fills the layout dropdown for whichever group the drawer is showing. */
 function renderLayoutSelect() {
     const stage = getSettingsStage();
@@ -3058,7 +3128,7 @@ function makeTurnText(layout, avatar, character, entry) {
     const text = document.createElement('textarea');
     text.classList.add('text_pole', 'textarea_compact', 'gr-layout-turn');
     text.rows = 3;
-    text.value = getTurnText(entry, character);
+    text.value = getTurnText(entry);
     text.placeholder = t`${name}'s turn when the scene opens. Blank: ${name} posts nothing.`;
     text.disabled = !character;
 
@@ -3146,7 +3216,6 @@ function renderLayoutCards() {
         return;
     }
 
-    ensureGreetingsLoaded(group, layout);
     container.innerHTML = '';
 
     if (!group?.members?.length) {
@@ -4365,7 +4434,9 @@ jQuery(async () => {
     eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
     eventSource.on(event_types.GROUP_CHAT_CREATED, openSceneFromLayout);
     eventSource.on(event_types.APP_READY, pruneOrphanStages);
-    eventSource.on(event_types.APP_READY, () => refreshWorlds());
+    eventSource.on(event_types.APP_READY, () => refreshWorlds().then(convertOldTurns)
+        .catch(error => console.error('[SideStage] Could not convert old layouts', error)));
+    document.addEventListener('visibilitychange', onBackToTab);
     // A card's world can change in ST too (and a deleted card leaves its world).
     eventSource.on(event_types.CHARACTER_EDITED, syncWorldGroupsSoon);
     eventSource.on(event_types.CHARACTER_DELETED, syncWorldGroupsSoon);

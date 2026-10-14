@@ -20,15 +20,16 @@ settings drawer.
 ### World groups
 
 A *world* is a lorebook shared by the cards of one setting, as made by the
-Character Editor (a lorebook marked `extensions.character_editor.world`; its
-cast is every card that links it). Every world gets its own group, made and
+Character Editor (a lorebook carrying SideStage's key, `extensions.sidestage`;
+its cast is every card that links it). Every world gets its own group, made and
 kept by SideStage:
 
 - **Made for you**: When SillyTavern starts (or on ⟳), each world with at least one card and no group of its own gets one: named after the world, the world's cards in the scene, and the Append join mode. Delete it and a new one is made (layouts are kept); a world with no cards yet gets its group when its first card joins.
 - **Members follow the world**: The group's members are exactly the world's cards. A card that joins the world joins the group, muted unless the selected layout puts it in the scene; a card that leaves the world, or any other member, leaves the group. The group's name follows the world's.
 - **Kept in the world**: Which group is the world's, the group's note and its layouts are stored in the world's lorebook (`extensions.sidestage`), so they travel with the world and survive it being renamed. SideStage re-reads the lorebook before each save and only replaces that key, so lore edited elsewhere is kept.
-- **Edit layouts in the Character Editor too**: Its World section edits the same layouts. Each save raises a revision number in the lorebook; when SideStage finds the layouts were saved elsewhere, it merges instead of overwriting, field by field (a layout's name, note, narrator and order, each card's entry and turn), so edits from both sides are kept. Edits made in the editor show up when you open the group's chat or the settings drawer, or press ⟳.
-- **Sync**: The group is brought in step when SillyTavern starts, when you open its chat, and when a card is edited or deleted in SillyTavern. Cards changed outside SillyTavern (in the Character Editor) reach it on a reload, or straight away with the ⟳ button in the panel header or the drawer.
+- **Edit layouts in the Character Editor too**: Its World section edits the same layouts. Each save raises a revision number in the lorebook; when SideStage finds the layouts were saved elsewhere, it merges instead of overwriting, field by field (a layout's name, note, narrator and order, each card's entry and turn), so edits from both sides are kept. Edits made in the editor show up when you come back to the SillyTavern tab, open the group's chat or the settings drawer, or press ⟳.
+- **Sync**: The group is brought in step when SillyTavern starts, when you open its chat, and when a card is edited or deleted in SillyTavern. Cards changed outside SillyTavern (in the Character Editor) reach it on a reload, or straight away with the ⟳ button in the panel header or the drawer. The Character Editor shows whether the group has caught up.
+- **Lore stays fresh**: SillyTavern keeps every lorebook it has read until the page is reloaded, so lore edited in the Character Editor wouldn't reach the chat, and SillyTavern's World Info editor would save its old copy over it. When you come back to the SillyTavern tab (or press ⟳), SideStage reads the lorebooks SillyTavern holds again and takes any that changed, reopening one shown in the World Info editor.
 - **Never deleted**: A group whose world is gone (deleted, or its cards unlinked) stays as an ordinary group, with its chats. Groups you make yourself are ordinary groups too: their members are managed in SillyTavern, and SideStage mutes and unmutes them.
 
 ### Greeting layouts
@@ -46,10 +47,9 @@ start a new chat with that group.
 - **No greeting pickers**: While a layout writes the opening (and for a world group's muted members), other extensions' greeting choices are skipped, so the Group Greetings extension's *Pick a greeting* popup doesn't appear for a greeting that would be replaced anyway.
 
 > [!NOTE]
-> Layouts from before 3.1 pinned one of each card's group greetings. Those still
-> open the scene with the pinned greeting, and the drawer shows it as the card's
-> turn; the first edit to a card's entry stores the text in the layout. Cards that
-> greeted at random, or not at all, start with a blank turn.
+> Layouts from before 3.1 pinned one of each card's group greetings. They are
+> converted once, when SillyTavern starts: the pinned greeting becomes the card's
+> turn. Cards that greeted at random, or not at all, get a blank turn.
 > The Character Editor's World section can also write a layout's turns with
 > DeepSeek, as one scene.
 
