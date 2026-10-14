@@ -2,58 +2,103 @@
    original prefixes: they were already unique, and renaming ~50 selectors
    would have been churn with real breakage risk and no payoff. */
 
-/* ═════════════════════════ The dock ═════════════════════════ */
+/* ═════════════════════════ The strip ════════════════════════ */
 
-/* One slot on the right edge, shared by the roster and the gallery. Fixed
-   furniture: neither can be dragged or resized, so they are always the same
-   size as each other and always in the same place.
+/* The right-hand column: the strip and, on a tablet, ST's zoomed avatar share
+   this one width, so they line up with each other and with the edge the chat
+   stops at.
 
-   The column runs from under ST's top bar down towards the frameless viewer.
-   The space kept for the viewer is a static reserve rather than a live
-   measurement of it: the viewer re-shapes itself to every image's aspect ratio,
-   so tracking it would make the roster grow and shrink on every swipe. The
-   reserve is 45dvh, just under the viewer's own 50dvh height cap, so only the
-   tallest images reach behind the dock's lower edge — and the viewer's z-index
-   puts it in front when one does.
+   The strip's fixed parts are sized here too, on the root rather than the
+   strip, because the zoomed avatar is placed by them from outside it: the
+   image slot (see The strip) and the section header, whose height is stated
+   rather than left to its content — the same 1.1em text at line-height 1.4,
+   plus 5px padding each side and a 1px rule. */
+:root {
+    --ss-column: max(220px, 20vw);
+    --ss-column: max(220px, 20dvw);
+    --ss-column-top: var(--topBarBlockSize, 40px);
+    --ss-image-slot: min(calc((var(--ss-column) - 1px) * 4 / 3),
+                         calc(var(--ss-strip-height, 100dvh) * 0.6));
+    --ss-header-height: calc(var(--mainFontSize) * 1.1 * 1.4 + 11px);
+}
+
+/* One fixed column on the right edge, spanning exactly what the chat column
+   does — #sheld's top to the bottom of the message box, measured into
+   --ss-strip-top and --ss-strip-height by index.js (measureStrip()), with a
+   full-height column as the fallback until then. It holds SideStage's sections
+   stacked as one panel: the roster (or the gallery, which takes its place
+   while open) above, the image slot below. Fixed furniture: nothing in it can
+   be dragged or resized.
+
+   The image slot is kept whether or not there is an image to show: a fixed
+   3:4 portrait at the strip's width, capped at 60% of its height, reserved as
+   padding. The roster and its footer end at the same line either way, rather
+   than the footer dropping to the bottom whenever a character has no images
+   or jumping with each image's shape. Images letterbox inside it.
+
+   Dressed as ST's own chat column (#chat, #send_form): the theme's blur tint,
+   blur strength, border colour and text colour, so it follows whatever theme
+   is loaded and reads as part of the page rather than a window over it.
 
    The span is top + height, never `bottom`. Core sets -webkit-transform on
    <html> (style.css, the blur-flicker fix), which makes <html> the containing
    block for fixed elements on WebKit. Core's mobile block then sets
-   `body { position: fixed }` under 1000px — and this install's user.css does
-   the same under 1420px — which takes body out of flow and collapses <html> to
-   zero height. A `bottom` offset resolved against that box puts the dock
-   off-screen: it rendered on a wide desktop and vanished on an iPad. Viewport
-   units dodge the collapsed containing block entirely. */
-.ss-dock {
+   `body { position: fixed }` under 1000px — and on a tablet SideStage stretches
+   that block to 1420px (see the tablet layout below) — which takes body out of
+   flow and collapses <html> to zero height. A `bottom` offset resolved against
+   that box puts the strip off-screen: it rendered on a wide desktop and
+   vanished on an iPad. Viewport units dodge the collapsed containing block
+   entirely. */
+.ss-strip {
     position: fixed;
     right: 0;
-    top: calc(var(--topBarBlockSize, 40px) + 8px);
-    /* 100dvh - top - (45dvh reserve + 24px spawn gap + 8px breathing room) */
-    height: calc(55vh - var(--topBarBlockSize, 40px) - 40px);
-    height: calc(55dvh - var(--topBarBlockSize, 40px) - 40px);
-    min-height: 160px;
-    width: 20vw;
-    min-width: 220px;
-}
-
-/* Fixed stacking order rather than a click-to-front scramble. The gallery is a
-   drill-down you open, pick from and dismiss, so it covers the roster outright
-   instead of splitting the slot; closing it reveals the roster underneath.
-   The frameless viewer sits above both, so dragging it over the dock works. */
-.gr-window.ss-dock {
+    top: var(--ss-strip-top, var(--ss-column-top));
+    height: calc(100vh - var(--ss-column-top));
+    height: var(--ss-strip-height, calc(100dvh - var(--ss-column-top)));
+    width: var(--ss-column);
+    box-sizing: border-box;
+    padding-bottom: var(--ss-image-slot);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background-color: var(--SmartThemeBlurTintColor);
+    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength));
+    backdrop-filter: blur(var(--SmartThemeBlurStrength));
+    color: var(--SmartThemeBodyColor);
+    border-left: 1px solid var(--SmartThemeBorderColor);
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    /* The bottom-left corner rounds like the message box's beside it (core's
+       #send_form, read by measureStrip()); overflow: hidden clips the image
+       to it. */
+    border-bottom-left-radius: var(--ss-strip-radius, 10px);
     z-index: 500;
 }
 
-.civ-window-standard.ss-dock {
-    z-index: 501;
+/* The gallery replaces the roster while it is open; either fills the strip
+   down to the image slot, closed off by a rule along the slot's top edge. */
+.ss-section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
+.gr-panel,
+.civ-gallery {
+    flex: 1 1 auto;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+.ss-strip:has(.civ-gallery) .gr-panel {
+    display: none;
+}
+
+
 /* ST's zoomed avatar — click an avatar in the chat — is absolutely positioned
-   and lands in the same corner as the dock on any theme that moves it right.
-   Core leaves it at z-index 29 (waifuMode) or 30 (mobile), well under the dock,
-   so it opened behind the panel. Lift it over everything here: it is opened and
-   dismissed by hand, so it only covers the dock while the user is looking at it,
-   and 510 still sits far below core's dialogs and popups.
+   and lands in the same corner as the strip on any theme that moves it right.
+   Core leaves it at z-index 29 (waifuMode) or 30 (mobile), well under the
+   strip, so it opened behind the panel. Lift it over everything here: it is
+   opened and dismissed by hand, so it only covers the strip while the user is
+   looking at it, and 510 still sits far below core's dialogs and popups.
 
    Both halves of core's rule are matched, waifuMode and not, so this wins on
    specificity and load order — extension CSS is appended to <head> after the
@@ -63,47 +108,145 @@ body.waifuMode .zoomed_avatar {
     z-index: 510;
 }
 
+/* ══════════════════════ Tablet layout ═══════════════════════ */
+
+/* body.ss-tablet is set by index.js from TABLET_QUERY (a touch screen at least
+   744px both ways, up to 1420px wide: any iPad, either orientation; phones
+   and desktop windows never match). The same query stretches core's mobile
+   block, which stops at 1000px, so an iPad in landscape gets the touch layout
+   too, from core's live rules rather than a copy of them that goes stale on
+   every update.
+
+   On top of that layout, the chat gives up the right-hand column, so the
+   strip and the zoomed avatar sit beside it instead of over it. */
+
+/* Core's mobile block makes these 100dvw !important and centres them; the
+   extra body class outranks it. With right released, the auto margins resolve
+   to 0 and they hold the left edge, ending where the column starts. ST's side
+   panels (#left-nav-panel, #right-nav-panel) are .drawer-content too, but
+   core's id selector still outranks this, so they stay full width. */
+body.ss-tablet #sheld,
+body.ss-tablet #character_popup,
+body.ss-tablet .drawer-content {
+    width: calc(100vw - var(--ss-column)) !important;
+    width: calc(100dvw - var(--ss-column)) !important;
+    right: auto;
+}
+
+/* Drawers end where the chat column does — level with the bottom of the
+   message box, the same span the strip takes (--ss-strip-height, measured by
+   index.js). Core leaves them to two competing rules: its mobile block's
+   100dvh - 45px, which ran the tall ones (Advanced Formatting, World Info,
+   User Settings) past the message box, and its iOS block's 100dvh - 70px,
+   which left the two side panels short of it. The fallback is the former,
+   for the moment before the first measurement. */
+body.ss-tablet .drawer-content {
+    max-height: var(--ss-strip-height, calc(100dvh - 45px));
+}
+
+/* The side panels (presets on the left, characters on the right) are a fixed
+   height rather than their content's, so they take the full span. By id, as
+   core's iOS block caps their max-height by id. Open only: core animates them
+   from height 0 on :not(.openDrawer). */
+body.ss-tablet #left-nav-panel.openDrawer,
+body.ss-tablet #right-nav-panel.openDrawer {
+    height: var(--ss-strip-height, calc(100dvh - 45px));
+    max-height: var(--ss-strip-height, calc(100dvh - 45px));
+}
+
+/* Core's iOS block (@supports (-webkit-touch-callout: none)) sizes
+   #world_popup as if it were a drawer of its own: the screen's full width,
+   100dvh - 70px tall and 36px down. It is the content inside the World Info
+   drawer, so it overflowed the drawer both ways, scrolling sideways and
+   running past the message box. Here it takes the drawer's width and its own
+   height, and the drawer scrolls it. user.css's tablet block used to unset
+   the same width and height. */
+body.ss-tablet #world_popup {
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: none;
+    margin-top: 0;
+}
+
+/* Core's mobile block centres the zoomed avatar on screen, over the chat.
+   Here it opens in the strip instead, in the panel between the section header
+   and the image slot — the part blanked below while it is open — centred in
+   it, the strip's width and no taller than it, so the header and the image
+   stay in view. With no header in the strip (a solo chat, where it holds only
+   the image) the panel starts at the strip's top. Fixed rather than core's
+   absolute so it is placed against the viewport, as the strip is; centred by
+   transform so its close bar stays on the image. */
+body.ss-tablet {
+    --ss-zoom-top: var(--ss-strip-top, var(--ss-column-top));
+    /* strip span - its 1px bottom rule - the image slot */
+    --ss-zoom-height: calc(var(--ss-strip-height, calc(100dvh - var(--ss-column-top)))
+                           - 1px - var(--ss-image-slot));
+}
+
+body.ss-tablet:has(#sideStage :is(.gr-header, .civ-header)) {
+    --ss-zoom-top: calc(var(--ss-strip-top, var(--ss-column-top)) + var(--ss-header-height));
+    --ss-zoom-height: calc(var(--ss-strip-height, calc(100dvh - var(--ss-column-top)))
+                           - 1px - var(--ss-image-slot) - var(--ss-header-height));
+}
+
+/* The max-heights need !important to beat core's own 90vh !important on the
+   avatar and height/object-fit !important on its image; the image letterboxes
+   inside the panel's height rather than being cropped by it. */
+body.ss-tablet:not(.waifuMode) .zoomed_avatar {
+    position: fixed;
+    top: calc(var(--ss-zoom-top) + var(--ss-zoom-height) / 2);
+    right: 0;
+    left: auto;
+    transform: translateY(-50%);
+    width: var(--ss-column);
+    max-width: var(--ss-column);
+    max-height: var(--ss-zoom-height) !important;
+}
+
+body.ss-tablet:not(.waifuMode) .zoomed_avatar img {
+    max-height: var(--ss-zoom-height);
+}
+
+/* While it is open, the panel it sits in is blanked: the roster's cards and
+   footer (or the gallery's grid) are hidden, the section header and the image
+   stay. ST appends a zoomed avatar straight to <body>; the child combinator
+   skips the copy kept in its #zoomed_avatar_template, which is always in the
+   page. visibility rather than display keeps the layout, so nothing reflows
+   on close. */
+body.ss-tablet:not(.waifuMode):has(> .zoomed_avatar) .ss-strip :is(.gr-body, .gr-footer, .civ-gallery-body) {
+    visibility: hidden;
+}
+
 /* Hover feedback is gated behind (hover: hover). On a touch screen :hover
    latches after a tap and never clears, so tapped roster cards, settings rows
    and thumbnails all stayed lit at once — several characters looking active
    when only one was.
 
-   The three .civ-window-frameless:hover rules are deliberately NOT gated: that
-   sticky hover is the only thing keeping the viewer's overlay controls, nav
-   arrows and resize grip on screen after a tap. Gating them would hide the
-   viewer's controls on touch for good. */
+   The .civ-viewer:hover rules are deliberately NOT gated: that sticky hover
+   is the only thing keeping the viewer's gallery button and nav arrows on
+   screen after a tap. Gating them would hide the viewer's controls on touch
+   for good. */
 
 /* ═══════════════════════ Group roster ═══════════════════════ */
 
-/* ---- Window ------------------------------------------------------------- */
-/* Mirrors .civ-window-standard from the Character Image Viewer, value for
-   value, so both floating windows read as the same component. Position fixed
-   and self-contained: this deliberately does NOT reuse ST's .draggable, which
-   is forced to 100vw/100vh below 1000px and goes fullscreen on a tablet. */
-.gr-window {
-    background-color: var(--smart-background-color, #1a1a1a);
-    border: 1px solid var(--smart-border-color, #444);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-    display: flex;
-    flex-direction: column;
-    position: fixed;
-    border-radius: 8px;
-    overflow: hidden;
-    z-index: 500;
-}
-
-/* One rule for both headers, not two matched sets. They swap in the same slot,
-   so any drift between them reads as the panel jumping — and matched-by-hand
+/* One rule for both headers, not two matched sets. They swap in the same
+   place in the strip, so any drift between them reads as the panel jumping — and matched-by-hand
    declarations had already drifted once.
 
    line-height is the point of it: without one, the line box grows to fit the
-   tallest glyph on the line, and the gallery's heavy multiplication X (U+2716)
-   is taller than plain text. Identical padding and font-size still gave the
-   gallery a taller header. Pinning line-height makes the box height a function
-   of the rule rather than of the characters that happen to be in it. */
+   tallest glyph on the line, so a header with an icon in it came out taller
+   than one without. Pinning line-height makes the box height a function of the
+   rule rather than of the characters that happen to be in it.
+
+   A darker band over the panel's own tint rather than a colour of its own, so
+   it follows the theme. */
 .gr-header,
 .civ-header {
-    background-color: var(--smart-app-bar-color, #2a2a2a);
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    height: var(--ss-header-height);
+    background-color: var(--black30a);
     padding: 5px 10px;
     font-size: calc(var(--mainFontSize) * 1.1);
     line-height: 1.4;
@@ -111,17 +254,13 @@ body.waifuMode .zoomed_avatar {
     justify-content: space-between;
     align-items: center;
     font-weight: bold;
-    border-bottom: 1px solid #444;
-    color: var(--smart-text-color, #eee);
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
 }
 
-/* Inherits the header's line-height so the glyph cannot reopen the gap. */
-.civ-close-btn {
-    font-size: 0.85em;
-    line-height: inherit;
-}
-
-/* The world group's sync button; hidden for groups not tied to a world. */
+/* The header icons: the roster's world sync (hidden for groups not tied to a
+   world) and the gallery's close, which is ST's own circle-xmark. Dimmed until
+   pointed at, as ST's panel controls are. Inheriting the header's line-height
+   keeps an icon from reopening the gap above. */
 .gr-header-btn {
     flex: 0 0 auto;
     cursor: pointer;
@@ -148,7 +287,6 @@ body.waifuMode .zoomed_avatar {
 .gr-body {
     flex-grow: 1;
     overflow-y: auto;
-    background: rgba(0, 0, 0, 0.2);
 }
 
 .gr-footer {
@@ -157,8 +295,8 @@ body.waifuMode .zoomed_avatar {
     align-items: stretch;
     gap: 6px;
     padding: 6px;
-    border-top: 1px solid #444;
-    background-color: var(--smart-app-bar-color, #2a2a2a);
+    border-top: 1px solid var(--SmartThemeBorderColor);
+    background-color: var(--black30a);
 }
 
 /* Kept compact so it reads as a status toggle rather than a primary action. */
@@ -174,7 +312,7 @@ body.waifuMode .zoomed_avatar {
 }
 
 /* Takes whatever the note toggle leaves, and truncates rather than pushing the
-   footer wider than the dock. */
+   footer wider than the strip. */
 .gr-footer-select {
     flex: 1 1 auto;
     min-width: 0;
@@ -183,7 +321,7 @@ body.waifuMode .zoomed_avatar {
     padding: 2px 6px;
     font-size: calc(var(--mainFontSize) * 0.8);
     border-radius: 4px;
-    color: var(--smart-text-color, #eee);
+    color: var(--SmartThemeBodyColor);
     background-color: rgba(255, 255, 255, 0.08);
     border: 1px solid var(--SmartThemeBorderColor);
 }
@@ -199,7 +337,7 @@ body.waifuMode .zoomed_avatar {
 
 .gr-footer-toggle:has(input:checked) {
     opacity: 1;
-    color: var(--smart-theme-color, #007bff);
+    color: var(--SmartThemeQuoteColor);
     background: rgba(255, 255, 255, 0.18);
 }
 
@@ -222,7 +360,7 @@ body.waifuMode .zoomed_avatar {
     padding: 6px 10px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--smart-text-color, #eee);
+    color: var(--SmartThemeBodyColor);
     background: rgba(255, 255, 255, 0.08);
     transition: background-color 0.2s;
 }
@@ -234,7 +372,7 @@ body.waifuMode .zoomed_avatar {
 }
 
 .gr-footer-btn:focus-visible {
-    outline: 2px solid var(--smart-theme-color, #007bff);
+    outline: 2px solid var(--SmartThemeQuoteColor);
     outline-offset: 2px;
 }
 
@@ -256,7 +394,7 @@ body.waifuMode .zoomed_avatar {
     font-size: 0.9em;
 }
 
-/* Truncates rather than pushing the footer wider than the dock. */
+/* Truncates rather than pushing the footer wider than the strip. */
 .gr-footer-action span {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -333,7 +471,7 @@ body.waifuMode .zoomed_avatar {
 }
 
 .gr-status.gr-warning {
-    color: #ff6b6b;
+    color: var(--warning);
     opacity: 1;
 }
 
@@ -355,7 +493,7 @@ body.waifuMode .zoomed_avatar {
     border-radius: 4px;
     font-size: calc(var(--mainFontSize) * 0.85);
     line-height: 1.2;
-    color: var(--smart-text-color, #eee);
+    color: var(--SmartThemeBodyColor);
 }
 
 @media (hover: hover) {
@@ -372,7 +510,7 @@ body.waifuMode .zoomed_avatar {
 
 .gr-card.gr-speaking {
     background: rgba(0, 0, 0, 0.3);
-    outline: 1px solid var(--smart-theme-color, #007bff);
+    outline: 1px solid var(--SmartThemeQuoteColor);
 }
 
 .gr-card-avatar {
@@ -404,16 +542,16 @@ body.waifuMode .zoomed_avatar {
 
 .gr-card.gr-focused {
     background: rgba(255, 255, 255, 0.1);
-    box-shadow: inset 2px 0 0 var(--smart-theme-color, #007bff);
+    box-shadow: inset 2px 0 0 var(--SmartThemeQuoteColor);
 }
 
 .gr-card.gr-focused .gr-card-name {
-    color: var(--smart-theme-color, #007bff);
+    color: var(--SmartThemeQuoteColor);
     font-weight: bold;
 }
 
 .gr-card-name:focus-visible {
-    outline: 2px solid var(--smart-theme-color, #007bff);
+    outline: 2px solid var(--SmartThemeQuoteColor);
     outline-offset: 2px;
 }
 
@@ -424,7 +562,7 @@ body.waifuMode .zoomed_avatar {
     padding: 10px;
     text-align: center;
     font-size: calc(var(--mainFontSize) * 0.9);
-    color: var(--smart-text-color, #eee);
+    color: var(--SmartThemeBodyColor);
 }
 
 /* ---- Inline icon toggles ------------------------------------------------ */
@@ -460,7 +598,7 @@ body.waifuMode .zoomed_avatar {
 
 .gr-icon-toggle:has(input:checked) {
     opacity: 1;
-    color: var(--smart-theme-color, #007bff);
+    color: var(--SmartThemeQuoteColor);
 }
 
 .gr-icon-toggle:has(input:disabled) {
@@ -470,14 +608,14 @@ body.waifuMode .zoomed_avatar {
 }
 
 .gr-icon-toggle:focus-within {
-    outline: 2px solid var(--smart-theme-color, #007bff);
+    outline: 2px solid var(--SmartThemeQuoteColor);
     outline-offset: 2px;
     opacity: 1;
 }
 
 .gr-card.gr-speaking .gr-turn {
     opacity: 1;
-    color: var(--smart-theme-color, #007bff);
+    color: var(--SmartThemeQuoteColor);
 }
 
 /* ---- Settings drawer ---------------------------------------------------- */
@@ -525,14 +663,15 @@ body.waifuMode .zoomed_avatar {
 /* ── Thumbnail Grid ── */
 .civ-gallery-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 10px;
-  padding: 10px;
+  /* Two columns at the strip's narrowest (220px). */
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+  padding: 8px;
 }
 
 .civ-thumb {
   width: 100%;
-  height: 120px;
+  aspect-ratio: 3 / 4;
   object-fit: cover;
   cursor: pointer;
   border-radius: 4px;
@@ -542,36 +681,21 @@ body.waifuMode .zoomed_avatar {
 
 @media (hover: hover) {
   .civ-thumb:hover {
-    border-color: var(--smart-theme-color, #007bff);
+    border-color: var(--SmartThemeQuoteColor);
     transform: scale(1.05);
   }
 }
 
-/* ── GALLERY Window ── */
-.civ-window-standard {
-  background-color: var(--smart-background-color, #1a1a1a);
-  border: 1px solid var(--smart-border-color, #444);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-  position: fixed;
-  border-radius: 8px;
-  overflow: hidden;
-  z-index: 500;
-}
-
-/* ── IMAGE Window (Transparent + Slideshow) ── */
-.civ-window-frameless {
-  position: fixed;
-  background: transparent;
-  box-shadow: 0 5px 25px rgba(0, 0, 0, 0.2);
-  display: flex;
-  flex-direction: column;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  /* Above both dock windows, so dragging it over the dock keeps it visible. */
-  z-index: 502;
+/* ── IMAGE section ── */
+/* Fills the strip's image slot (the strip's bottom padding, see The strip).
+   object-fit letterboxes an image whose shape differs from the slot's. */
+.civ-viewer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--ss-image-slot);
+  background-color: var(--black30a);
 }
 
 .civ-overlay-container {
@@ -589,8 +713,8 @@ body.waifuMode .zoomed_avatar {
   transition: opacity 0.2s ease-in-out;
 }
 
-.civ-window-frameless:hover .civ-overlay-container,
-.civ-window-frameless:focus-within .civ-overlay-container {
+.civ-viewer:hover .civ-overlay-container,
+.civ-viewer:focus-within .civ-overlay-container {
   opacity: 1;
 }
 
@@ -614,14 +738,6 @@ body.waifuMode .zoomed_avatar {
     background: rgba(255, 255, 255, 0.15);
     text-shadow: none;
   }
-}
-
-.civ-drag-handle {
-  cursor: grab;
-}
-
-.civ-drag-handle:active {
-  cursor: grabbing;
 }
 
 @media (hover: hover) {
@@ -648,8 +764,8 @@ body.waifuMode .zoomed_avatar {
   opacity: 0;
 }
 
-.civ-window-frameless:hover .civ-nav-arrow,
-.civ-window-frameless:focus-within .civ-nav-arrow {
+.civ-viewer:hover .civ-nav-arrow,
+.civ-viewer:focus-within .civ-nav-arrow {
   opacity: 1;
 }
 
@@ -669,39 +785,16 @@ body.waifuMode .zoomed_avatar {
   right: 0;
 }
 
-/* ── Resize Handle ── */
-.civ-window-frameless .ui-resizable-se {
-  width: 25px !important;
-  height: 25px !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  background: radial-gradient(
-    circle at bottom right,
-    rgba(255, 255, 255, 0.4) 0%,
-    transparent 50%
-  );
-  border-bottom-right-radius: 8px;
-  opacity: 0;
-  transition: opacity 0.2s;
-  cursor: se-resize;
-}
-
-.civ-window-frameless:hover .ui-resizable-se,
-.civ-window-frameless:focus-within .ui-resizable-se {
-  opacity: 1;
-}
-
 /* ── Gallery Body ── */
 .civ-gallery-body {
   flex-grow: 1;
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.2);
 }
 
 /* ── Viewer Image ── */
 .civ-img-wrap {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -728,11 +821,11 @@ body.waifuMode .zoomed_avatar {
   pointer-events: none;
 }
 
-.civ-window-frameless.civ-load-error .civ-img-wrap img {
+.civ-viewer.civ-load-error .civ-img-wrap img {
   visibility: hidden;
 }
 
-.civ-window-frameless.civ-load-error::after {
+.civ-viewer.civ-load-error::after {
   content: "Image unavailable";
   position: absolute;
   inset: 0;
@@ -750,7 +843,7 @@ body.waifuMode .zoomed_avatar {
 .civ-nav-arrow:focus-visible,
 .civ-close-btn:focus-visible,
 .civ-thumb:focus-visible {
-  outline: 2px solid var(--smart-theme-color, #007bff);
+  outline: 2px solid var(--SmartThemeQuoteColor);
   outline-offset: 2px;
   opacity: 1;
 }
