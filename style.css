@@ -6,11 +6,20 @@
 
 /* The right-hand column: the strip and, on a tablet, ST's zoomed avatar share
    this one width, so they line up with each other and with the edge the chat
-   stops at. */
+   stops at.
+
+   The strip's fixed parts are sized here too, on the root rather than the
+   strip, because the zoomed avatar is placed by them from outside it: the
+   image slot (see The strip) and the section header, whose height is stated
+   rather than left to its content — the same 1.1em text at line-height 1.4,
+   plus 5px padding each side and a 1px rule. */
 :root {
     --ss-column: max(220px, 20vw);
     --ss-column: max(220px, 20dvw);
     --ss-column-top: var(--topBarBlockSize, 40px);
+    --ss-image-slot: min(calc((var(--ss-column) - 1px) * 4 / 3),
+                         calc(var(--ss-strip-height, 100dvh) * 0.6));
+    --ss-header-height: calc(var(--mainFontSize) * 1.1 * 1.4 + 11px);
 }
 
 /* One fixed column on the right edge, spanning exactly what the chat column
@@ -47,8 +56,6 @@
     height: calc(100vh - var(--ss-column-top));
     height: var(--ss-strip-height, calc(100dvh - var(--ss-column-top)));
     width: var(--ss-column);
-    --ss-image-slot: min(calc((var(--ss-column) - 1px) * 4 / 3),
-                         calc(var(--ss-strip-height, 100dvh) * 0.6));
     box-sizing: border-box;
     padding-bottom: var(--ss-image-slot);
     display: flex;
@@ -169,17 +176,52 @@ body.ss-tablet #world_popup {
 }
 
 /* Core's mobile block centres the zoomed avatar on screen, over the chat.
-   Here it opens in the column instead, at the strip's top and width, covering
-   the strip until it is closed (z-index above). Fixed rather than core's
-   absolute so it is placed against the viewport, as the strip is. */
+   Here it opens in the strip instead, in the panel between the section header
+   and the image slot — the part blanked below while it is open — centred in
+   it, the strip's width and no taller than it, so the header and the image
+   stay in view. With no header in the strip (a solo chat, where it holds only
+   the image) the panel starts at the strip's top. Fixed rather than core's
+   absolute so it is placed against the viewport, as the strip is; centred by
+   transform so its close bar stays on the image. */
+body.ss-tablet {
+    --ss-zoom-top: var(--ss-strip-top, var(--ss-column-top));
+    /* strip span - its 1px bottom rule - the image slot */
+    --ss-zoom-height: calc(var(--ss-strip-height, calc(100dvh - var(--ss-column-top)))
+                           - 1px - var(--ss-image-slot));
+}
+
+body.ss-tablet:has(#sideStage :is(.gr-header, .civ-header)) {
+    --ss-zoom-top: calc(var(--ss-strip-top, var(--ss-column-top)) + var(--ss-header-height));
+    --ss-zoom-height: calc(var(--ss-strip-height, calc(100dvh - var(--ss-column-top)))
+                           - 1px - var(--ss-image-slot) - var(--ss-header-height));
+}
+
+/* The max-heights need !important to beat core's own 90vh !important on the
+   avatar and height/object-fit !important on its image; the image letterboxes
+   inside the panel's height rather than being cropped by it. */
 body.ss-tablet:not(.waifuMode) .zoomed_avatar {
     position: fixed;
-    top: var(--ss-strip-top, var(--ss-column-top));
+    top: calc(var(--ss-zoom-top) + var(--ss-zoom-height) / 2);
     right: 0;
     left: auto;
-    transform: none;
+    transform: translateY(-50%);
     width: var(--ss-column);
     max-width: var(--ss-column);
+    max-height: var(--ss-zoom-height) !important;
+}
+
+body.ss-tablet:not(.waifuMode) .zoomed_avatar img {
+    max-height: var(--ss-zoom-height);
+}
+
+/* While it is open, the panel it sits in is blanked: the roster's cards and
+   footer (or the gallery's grid) are hidden, the section header and the image
+   stay. ST appends a zoomed avatar straight to <body>; the child combinator
+   skips the copy kept in its #zoomed_avatar_template, which is always in the
+   page. visibility rather than display keeps the layout, so nothing reflows
+   on close. */
+body.ss-tablet:not(.waifuMode):has(> .zoomed_avatar) .ss-strip :is(.gr-body, .gr-footer, .civ-gallery-body) {
+    visibility: hidden;
 }
 
 /* Hover feedback is gated behind (hover: hover). On a touch screen :hover
@@ -207,6 +249,9 @@ body.ss-tablet:not(.waifuMode) .zoomed_avatar {
    it follows the theme. */
 .gr-header,
 .civ-header {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    height: var(--ss-header-height);
     background-color: var(--black30a);
     padding: 5px 10px;
     font-size: calc(var(--mainFontSize) * 1.1);
