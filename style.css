@@ -807,9 +807,10 @@ body.waifuMode .zoomed_avatar {
     margin: 0;
 }
 
-/* Rows are real elements so a whole one can be dragged, which means the five
+/* Rows are real elements so a whole one can be dragged, which means the
    columns are held in line by widths shared between the header and every row
-   rather than by a single grid. */
+   rather than by a single grid. A card in the scene has its turn under the
+   columns: the row wraps, and the turn takes a line of its own. */
 .gr-layout-grid {
     display: flex;
     flex-direction: column;
@@ -839,13 +840,13 @@ body.waifuMode .zoomed_avatar {
     text-align: center;
 }
 
-/* Exactly one column in the row may flex: .gr-layout-greeting, which is the
-   one whose contents are long enough to be worth the space. Every other column
-   is fixed and unshrinkable, so each row resolves its columns identically and
-   the header lines up with all of them. Give a second column flex-grow and the
-   free space gets split against each row's own name width instead, which puts
-   every row's columns in a different place. min-width:0 throughout so a glyph
-   or a label can't hold a column open past its stated width either. */
+.gr-layout-row {
+    flex-wrap: wrap;
+}
+
+/* Every column is fixed and unshrinkable, so each row resolves its columns
+   identically and the header lines up with all of them. min-width:0 throughout
+   so a glyph or a label can't hold a column open past its stated width. */
 .gr-layout-grip {
     flex: 0 0 16px;
     min-width: 0;
@@ -863,8 +864,7 @@ body.waifuMode .zoomed_avatar {
     cursor: default;
 }
 
-/* Wide enough for a name and no wider, so the toggles sit near the handle and
-   everything past them is the greeting's. A width the container decides rather
+/* Wide enough for a name and no wider, so the toggle sits near the handle. A width the container decides rather
    than the name's own, which would differ per row and take the alignment with
    it; long names ellipsis instead. Clamped so it stays legible on a phone and
    stops hoarding room on a wide screen. */
@@ -888,29 +888,13 @@ body.waifuMode .zoomed_avatar {
     margin: 0;
 }
 
-/* The cell is the flex item, never the <select>: Safari sizes a select to its
-   widest option and will not shrink below it however min-width is set, so on
-   iOS a select as the flex item pushes the whole drawer sideways. The div
-   shrinks, and the select is told to fill whatever it gets. */
-.gr-layout-greeting {
-    flex: 1 1 auto;
+/* A line of its own under the columns, indented past the grip. */
+.gr-layout-turn {
+    flex: 1 0 100%;
+    max-width: calc(100% - 24px);
     min-width: 0;
-    overflow: hidden;
-}
-
-.gr-layout-greeting-select {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    height: auto;
-    margin: 0;
-    padding: 2px 6px;
-    font-size: calc(var(--mainFontSize) * 0.8);
-    /* A select clips its selected option rather than ellipsing it by default,
-       which reads as a rendering fault rather than as more text. */
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    margin: 0 0 6px 24px;
+    resize: vertical;
 }
 
 /* forcePlaceholderSize keeps the gap the height of the row being moved. */

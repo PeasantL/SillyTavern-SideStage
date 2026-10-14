@@ -33,7 +33,6 @@ import {
     system_message_types,
     system_avatar,
     default_avatar,
-    getCurrentChatId,
     getCharacters,
     getRequestHeaders,
     saveChatConditional,
@@ -82,11 +81,15 @@ let focusedAvatar = null;
 
 /**
  * @typedef {object} LayoutEntry
- * @property {boolean} active Whether the card is in the scene (unmuted) while this layout is selected
- * @property {boolean} greets Whether the card posts an opening message
- * @property {number|null} greeting Index into the card's group greetings, or null for random
- * @property {string} [greetingKey] Fingerprint of the pinned greeting's text (see greetingKey()), so the pin
- *     follows its greeting when the card's group greetings are reordered
+ * @property {boolean} active Whether the card is in the scene (unmuted) while this layout is selected. Everyone
+ *     in the scene has a turn in the opening.
+ * @property {string} text The card's turn: what it posts when a new chat opens with this layout. Written for
+ *     this layout alone (it follows on from the turns before it), so it lives here rather than in the card.
+ *     Blank posts nothing.
+ *
+ * Layouts saved before turns were kept in the layout have no `text`, and pinned one of the card's group
+ * greetings instead: `greets` (whether it posted at all), `greeting` (an index into its group greetings, or null
+ * for random) and `greetingKey`. getTurnText() still reads those, and the first edit to the entry replaces them.
  */
 
 /**
@@ -96,7 +99,7 @@ let focusedAvatar = null;
  * @property {string} id
  * @property {string} name
  * @property {string} note Author's Note for this scene; blank falls back to the group's
- * @property {string} narrator Scene-setting text posted before the greetings; blank for none
+ * @property {string} narrator Scene-setting text posted before the turns; blank for none
  * @property {string[]} order Avatar file names, in the order the scene opens
  * @property {Record<string, LayoutEntry>} cards Keyed by avatar file name; absent means muted
  */
@@ -325,40 +328,62 @@ function getLayoutOrder(group, layout) {
  * @returns {LayoutEntry}
  */
 function getLayoutEntry(layout, avatar) {
-    return layout.cards[avatar] ?? { active: false, greets: false, greeting: null };
+    return layout.cards[avatar] ?? { active: false, text: '' };
 }
 
 /**
- * Writes part of a card's layout entry back, creating it if needed.
+ * Writes part of a card's layout entry back, creating it if needed. An entry
+ * still in the old pinned form gets its turn's text first, so the pin's
+ * greeting carries over.
  * @param {string} groupId Group whose stage holds the layout
  * @param {Layout} layout
  * @param {string} avatar
  * @param {Partial<LayoutEntry>} patch
  */
 function setLayoutEntry(groupId, layout, avatar, patch) {
-    const entry = Object.assign(getLayoutEntry(layout, avatar), patch);
+    const entry = { ...getLayoutEntry(layout, avatar) };
+    const character = getCharacterByAvatar(avatar);
 
-    // Speaking, and which greeting to speak, only mean anything for a card that
-    // is in the scene at all.
-    if (!entry.active) {
-        entry.greets = false;
-        entry.greeting = null;
-    }
-
-    if (!Number.isInteger(entry.greeting)) {
+    // A shallow card has no greetings loaded to read the pin from; keep the
+    // pin until it can be, rather than turning it into a blank turn.
+    if (typeof entry.text !== 'string' && !character?.shallow) {
+        entry.text = getTurnText(entry, character);
+        delete entry.greets;
+        delete entry.greeting;
         delete entry.greetingKey;
     }
 
+    Object.assign(entry, patch);
     layout.cards[avatar] = entry;
     saveStage(groupId);
 }
 
 /**
- * A short fingerprint of a greeting: FNV-1a (32-bit, hex) over its code points,
- * with runs of whitespace collapsed to one space and the ends trimmed. Kept
- * beside a pin's index so the pin can find its greeting again after the card's
- * greetings are reordered; other tools that move greetings can compute the
- * same value to keep pins in step.
+ * A card's turn in a layout's opening: its own text, or for an entry from
+ * before turns were kept in the layout, the group greeting it pinned (blank
+ * when it didn't greet or greeted at random).
+ * @param {LayoutEntry} entry
+ * @param {object} [character]
+ * @returns {string}
+ */
+function getTurnText(entry, character) {
+    if (typeof entry.text === 'string') {
+        return entry.text;
+    }
+
+    if (!entry.active || entry.greets === false) {
+        return '';
+    }
+
+    const pool = getGroupGreetings(character);
+    const pinned = resolvePin(entry, pool);
+    return pinned === null ? '' : pool[pinned];
+}
+
+/**
+ * The old pins' fingerprint of a greeting: FNV-1a (32-bit, hex) over its code
+ * points, with runs of whitespace collapsed to one space and the ends trimmed.
+ * Only read now, to find what an old pin pointed at (see getTurnText()).
  * @param {string} text
  * @returns {string}
  */
@@ -397,13 +422,7 @@ function resolvePin(entry, pool) {
 }
 
 /**
- * The greetings a card can open a group scene with.
- *
- * Deliberately only the group-only pool, never first_mes or the ordinary
- * alternate greetings: pinning a scene's opening line is a promise about what
- * appears, and the ordinary greetings are written for a solo chat. A card with
- * no group greetings simply can't be pinned, and falls through to whatever ST
- * would have done.
+ * A card's group greetings, as the old pins counted them (see getTurnText()).
  *
  * Precedence matches Extension-GroupGreetings' own reader so both agree on
  * which list is in play: Spec v3 group_only_greetings, with the legacy
@@ -1162,30 +1181,14 @@ function isLayoutUsable(group, layout) {
 }
 
 /**
- * Greeting text chosen during the current chat's creation, keyed by avatar.
- *
- * The greeting loop is the only place other extensions get to pick a greeting,
- * and it only runs for characters that were group members at the time. Their
- * choices are kept here so that rebuilding the scene afterwards reuses them
- * rather than asking again — which for Extension-GroupGreetings in pick mode
- * would mean a second dialog for the same character.
- *
- * Stamped with the chat it belongs to, so a scene can never be built out of
- * text left over from the previous one.
- * @type {{chatId: string, texts: Map<string, string>}}
- */
-let capturedGreetings = { chatId: '', texts: new Map() };
-
-/**
- * Captures and then suppresses one member's greeting while a group chat is
- * being created. Fires once per member, before its message is built.
+ * Suppresses one member's greeting while a group chat is being created. Fires
+ * once per member, before its message is built.
  *
  * Every greeting is suppressed, not just the ones the layout leaves out: the
- * loop walks group.members, so it can never produce a greeting for a character
+ * loop walks group.members, so it can never produce a turn for a character
  * the layout wants but the group has lost, and a scene half-built by the loop
- * and half-repaired afterwards would come out in the wrong order. The loop is
- * left to run for the choices it collects, and openSceneFromLayout() builds the
- * whole opening from them.
+ * and half-repaired afterwards would come out in the wrong order.
+ * openSceneFromLayout() builds the whole opening from the layout's turns.
  * @param {{input: string, output: string, character: object}} args
  */
 function applyLayoutGreeting(args) {
@@ -1206,50 +1209,11 @@ function applyLayoutGreeting(args) {
         return;
     }
 
-    const chatId = String(getCurrentChatId() ?? '');
-
-    if (capturedGreetings.chatId !== chatId) {
-        capturedGreetings = { chatId, texts: new Map() };
-    }
-
-    capturedGreetings.texts.set(avatar, String(args.output || args.input || ''));
-
     // Whitespace rather than '': group-chats.js only takes the override when it
     // is truthy, so an empty string would leave the random pick standing. A
     // space survives that check, is trimmed to nothing immediately after, and a
     // member whose first message is empty is dropped from the chat.
     args.output = ' ';
-}
-
-/**
- * The line a character opens the scene with.
- * @param {Layout} layout
- * @param {object} character
- * @param {Map<string, string>} captured
- * @returns {string}
- */
-function getOpeningLine(layout, character, captured) {
-    const entry = getLayoutEntry(layout, character.avatar);
-    const pool = getGroupGreetings(character);
-
-    const pinned = resolvePin(entry, pool);
-
-    if (pinned !== null) {
-        return pool[pinned];
-    }
-
-    if (captured.has(character.avatar)) {
-        return captured.get(character.avatar);
-    }
-
-    // Never reached the greeting loop, so nothing chose for it (the character
-    // joined after the chat was built). Mirror what ST and
-    // Extension-GroupGreetings would have done.
-    const options = pool.length
-        ? pool
-        : [character.first_mes, ...(character.data?.alternate_greetings ?? [])].filter(x => x);
-
-    return options.length ? options[Math.floor(Math.random() * options.length)] : '';
 }
 
 /**
@@ -1315,19 +1279,15 @@ function buildNarratorMessage(layout) {
  *
  * Runs on GROUP_CHAT_CREATED, once the greeting loop has finished and left the
  * chat empty. Doing the whole opening here rather than steering the loop is
- * what puts the greetings in the layout's order (the loop walks the member
- * list) and lets a card that joined since the chat was built greet too. The
- * mutes are applied first, so the scene and its greetings land together.
+ * what puts the turns in the layout's order (the loop walks the member list)
+ * and lets a card that joined since the chat was built take its turn too.
+ * Everyone in the scene posts their turn; a blank turn posts nothing. The
+ * mutes are applied first, so the scene and its turns land together.
  * @returns {Promise<void>}
  */
 async function openSceneFromLayout() {
     const group = getCurrentGroup();
     const layout = getActiveLayout(getActiveStage());
-
-    const captured = capturedGreetings.chatId === String(getCurrentChatId() ?? '')
-        ? capturedGreetings.texts
-        : new Map();
-    capturedGreetings = { chatId: '', texts: new Map() };
 
     if (!isLayoutUsable(group, layout)) {
         return;
@@ -1347,11 +1307,11 @@ async function openSceneFromLayout() {
         const character = getCharacterByAvatar(avatar);
         const entry = getLayoutEntry(layout, avatar);
 
-        if (!character || !entry.active || !entry.greets) {
+        if (!character || !entry.active) {
             continue;
         }
 
-        messages.push(buildGreetingMessage(character, getOpeningLine(layout, character, captured)));
+        messages.push(buildGreetingMessage(character, getTurnText(entry, character)));
     }
 
     // Defensive: the loop suppressed everything, so both should already be
@@ -1622,9 +1582,13 @@ async function sendUserTurnOnly() {
  * costs one small call and leaves the ongoing conversation exactly as it was.
  */
 
-/** Headroom over the source, so a rewrite is never clipped mid-sentence. */
+/**
+ * Headroom over the source, so a rewrite is never clipped mid-sentence. The
+ * flat 2048 on top is for a profile that thinks first: its reasoning comes out
+ * of this same budget. 8192 is the most some providers accept at all.
+ */
 function assistBudget(text) {
-    return Math.min(4096, Math.max(512, Math.ceil(String(text ?? '').length / 2) + 256));
+    return Math.min(8192, Math.ceil(String(text ?? '').length / 2) + 256 + 2048);
 }
 
 /**
@@ -1812,15 +1776,11 @@ async function runAssistRequest(messages, maxTokens, onProgress = null) {
         // Text-completion profiles need the messages flattened through their
         // instruct template; chat-completion profiles get the array back as-is.
         const prompt = service.constructPrompt(messages, profile.id);
-        const isTextCompletion = service.validateProfile(profile)?.selected === 'textgenerationwebui';
-        // These are edits, not writing: reasoning would only be stripped off
-        // again, and on OpenRouter it is this pair that actually stops it
-        // rather than merely hiding it.
-        const overrides = isTextCompletion
-            ? { include_reasoning: false }
-            : { include_reasoning: false, reasoning_effort: 'min' };
+        // No overrides: the request runs with the profile's own preset, so its
+        // reasoning settings hold here too. Whatever thinking comes back in the
+        // body is stripped by cleanAssistOutput / previewAssistOutput.
         const stream = Boolean(onProgress);
-        const result = await service.sendRequest(profile.id, prompt, maxTokens, { stream }, overrides);
+        const result = await service.sendRequest(profile.id, prompt, maxTokens, { stream });
 
         if (!stream) {
             return cleanAssistOutput(result?.content ?? result);
@@ -2289,7 +2249,8 @@ const OOC_REPLY_PROMPT = [
     '- No preamble, and no roleplay formatting like *asterisks* in the OOC reply.',
 ].join('\n');
 
-const OOC_MAX_TOKENS = 1024;
+// Room for a profile that thinks before it answers; see assistBudget.
+const OOC_MAX_TOKENS = 4096;
 
 /**
  * Posts an OOC line as a real user turn, then asks whoever last spoke to
@@ -2858,7 +2819,7 @@ const settingsHtml = `
                 <div id="gr_layout_body">
                     <label for="gr_layout_narrator">Narrator opening</label>
                     <textarea id="gr_layout_narrator" class="text_pole textarea_compact" rows="3"
-                              placeholder="Posted before the greetings to set the scene. Leave blank for none."></textarea>
+                              placeholder="Posted before the turns to set the scene. Leave blank for none."></textarea>
                     <label for="gr_layout_note">Author's Note for this layout</label>
                     <textarea id="gr_layout_note" class="text_pole textarea_compact" rows="3"
                               placeholder="Overrides the group's note while this layout is selected"></textarea>
@@ -2954,13 +2915,15 @@ function getSettingsLayout() {
 let loadingCardData = false;
 
 /**
- * Members of a group that isn't open are shallow, and a shallow card has no
- * data.group_only_greetings to list — the greeting column would read as "no
- * group greetings" for every card. Loads them once and repaints.
+ * A layout saved before turns were kept in the layout pins one of each card's
+ * group greetings, and members of a group that isn't open are shallow, with no
+ * greetings loaded to read the pin from: their turns would read as blank.
+ * Loads them once and repaints.
  * @param {object|null} group
+ * @param {Layout} layout
  */
-function ensureGreetingsLoaded(group) {
-    if (loadingCardData || !group) {
+function ensureGreetingsLoaded(group, layout) {
+    if (loadingCardData || !group || !Object.values(layout.cards).some(x => typeof x.text !== 'string')) {
         return;
     }
 
@@ -3041,76 +3004,34 @@ function makeLayoutCheckbox({ checked, disabled, title, onChange }) {
 }
 
 /**
- * Builds the greeting picker for one card. Only group greetings are offered;
- * a card without any can still greet, just not from a pinned line.
- *
- * Returned wrapped in a cell, because the cell is what shrinks: Safari sizes a
- * <select> to its widest option and will not go below that however min-width is
- * set, so on iOS the select is told to fill a cell that can shrink instead of
- * being the flex item itself.
+ * Builds the text box for one card's turn.
  * @param {Layout} layout
  * @param {string} avatar
  * @param {object} [character]
  * @param {LayoutEntry} entry
- * @returns {HTMLElement}
+ * @returns {HTMLTextAreaElement}
  */
-function makeGreetingSelect(layout, avatar, character, entry) {
-    const cell = document.createElement('div');
-    cell.classList.add('gr-layout-greeting');
+function makeTurnText(layout, avatar, character, entry) {
+    const name = character?.name ?? avatar;
+    const text = document.createElement('textarea');
+    text.classList.add('text_pole', 'textarea_compact', 'gr-layout-turn');
+    text.rows = 3;
+    text.value = getTurnText(entry, character);
+    text.placeholder = t`${name}'s turn when the scene opens. Blank: ${name} posts nothing.`;
+    text.disabled = !character;
 
-    const select = document.createElement('select');
-    select.classList.add('text_pole', 'gr-layout-greeting-select');
-    cell.appendChild(select);
-
-    const greetings = getGroupGreetings(character);
-
-    if (!greetings.length) {
-        const option = document.createElement('option');
-        option.textContent = t`No group greetings`;
-        select.appendChild(option);
-        select.disabled = true;
-        select.title = t`Only group greetings can be pinned. Add some from the button beside Alt. Greetings on the card.`;
-        return cell;
-    }
-
-    const random = document.createElement('option');
-    random.value = '';
-    random.textContent = t`Random`;
-    select.appendChild(random);
-
-    greetings.forEach((text, index) => {
-        const option = document.createElement('option');
-        option.value = String(index);
-        // Long enough to fill the column on a wide drawer; a narrower one clips
-        // it with an ellipsis, and the full text is on the title either way.
-        // Safe to be this long now the cell shrinks rather than the select:
-        // the option text no longer has any say in how wide the row is.
-        const summary = text.replace(/\s+/g, ' ').trim();
-        option.textContent = `${index + 1}. ${summary.length > 100 ? `${summary.slice(0, 100)}…` : summary}`;
-        option.title = text;
-        select.appendChild(option);
+    text.addEventListener('input', () => {
+        setLayoutEntry(getSettingsGroupId(), layout, avatar, { text: String(text.value) });
     });
 
-    // Found by its text first, so a pin follows its greeting when the card's
-    // greetings are reordered; one past the end of the list reads as random.
-    const pinned = resolvePin(entry, greetings);
-    select.value = pinned === null ? '' : String(pinned);
-    select.disabled = !entry.greets;
-    select.title = t`Which group greeting this card opens with`;
-
-    select.addEventListener('change', () => {
-        const index = select.value === '' ? null : Number(select.value);
-        setLayoutEntry(getSettingsGroupId(), layout, avatar,
-            { greeting: index, greetingKey: index === null ? undefined : greetingKey(greetings[index]) });
-    });
-
-    return cell;
+    return text;
 }
 
 /**
  * Builds one card's row. Rows are real elements rather than cells appended flat
  * into one grid, because a row has to be draggable as a unit; the columns are
- * held in line by fixed widths shared with the header instead.
+ * held in line by fixed widths shared with the header instead. A card in the
+ * scene has its turn under the row.
  * @param {Layout} layout
  * @param {string} avatar
  * @returns {HTMLElement}
@@ -3149,30 +3070,23 @@ function makeLayoutRow(layout, avatar) {
     const active = makeLayoutCheckbox({
         checked: entry.active,
         disabled: !character,
-        title: t`In the scene (unmuted) while this layout is selected`,
+        title: t`In the scene (unmuted) while this layout is selected; everyone in the scene has a turn`,
         onChange: (checked) => {
-            // Being in the scene implies opening it; uncheck Greets to have a
-            // card present from the start without a line of its own.
-            setLayoutEntry(getSettingsGroupId(), layout, avatar, { active: checked, greets: checked });
+            setLayoutEntry(getSettingsGroupId(), layout, avatar, { active: checked });
             renderLayoutCards();
         },
     });
 
-    const greets = makeLayoutCheckbox({
-        checked: entry.greets,
-        disabled: !character || !entry.active,
-        title: t`Posts an opening message when a new chat starts`,
-        onChange: (checked) => {
-            setLayoutEntry(getSettingsGroupId(), layout, avatar, { greets: checked });
-            renderLayoutCards();
-        },
-    });
+    row.append(grip, card, active);
 
-    row.append(grip, card, active, greets, makeGreetingSelect(layout, avatar, character, entry));
+    if (entry.active) {
+        row.append(makeTurnText(layout, avatar, character, entry));
+    }
+
     return row;
 }
 
-/** Paints the matrix: who is in the scene, who opens it, and with what. */
+/** Paints the matrix: who is in the scene, in what order, and their turns. */
 function renderLayoutCards() {
     const body = document.getElementById('gr_layout_body');
     const container = document.getElementById('gr_layout_cards');
@@ -3190,7 +3104,7 @@ function renderLayoutCards() {
         return;
     }
 
-    ensureGreetingsLoaded(group);
+    ensureGreetingsLoaded(group, layout);
     container.innerHTML = '';
 
     if (!group?.members?.length) {
@@ -3204,8 +3118,7 @@ function renderLayoutCards() {
     const head = document.createElement('div');
     head.classList.add('gr-layout-head');
 
-    for (const [label, className] of [['', 'gr-layout-grip'], [t`Card`, 'gr-layout-card'],
-        [t`In scene`, 'gr-layout-check'], [t`Greets`, 'gr-layout-check'], [t`Greeting`, 'gr-layout-greeting']]) {
+    for (const [label, className] of [['', 'gr-layout-grip'], [t`Card`, 'gr-layout-card'], [t`In scene`, 'gr-layout-check']]) {
         const cell = document.createElement('span');
         cell.classList.add(className);
         cell.textContent = label;
@@ -3348,7 +3261,7 @@ function addSettings() {
 
         for (const avatar of group?.members ?? []) {
             if (!group.disabled_members?.includes(avatar)) {
-                layout.cards[avatar] = { active: true, greets: true, greeting: null };
+                layout.cards[avatar] = { active: true, text: '' };
             }
         }
 
