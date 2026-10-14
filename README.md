@@ -132,6 +132,11 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   - *Rewrite* — what the **Morality** and **Scene** buttons ask.
   - *Images* — *Open the viewer automatically on character select* and *Change with Greeting*.
 
+## 🧪 Tests
+
+`node tests/merge.test.mjs` runs the layout merge over `tests/stage-merge-cases.json`, the cases the Character
+Editor's own merge runs too, so the two apps keep merging each other's saves the same way.
+
 ## 🔒 Privacy
 
 Character cards can reference images on any server. Displaying them makes your browser fetch those URLs directly, which reveals your IP address and user agent to whoever hosts them. Only use cards you trust.
