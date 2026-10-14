@@ -13,7 +13,7 @@ settings drawer.
 ### Roster
 
 - **The cast is the group**: The panel lists the open group's members. Who is in the scene is who is unmuted: the panel's first toggle mutes and unmutes a member (SillyTavern's own mute), so SillyTavern's group panel and SideStage always agree. Muted members stay in the group but aren't picked to reply. Use the **Append** card join mode (group settings) so only unmuted members' cards reach the prompt.
-- **Force a turn**: Make a specific member speak next, bypassing the activation strategy, muted or not. Anything typed in the message box is posted as your user turn first, so the forced reply answers it.
+- **Force a turn**: Make a specific member speak next, bypassing the activation strategy. Only members in the scene can: a muted member's button is greyed out. Anything typed in the message box is posted as your user turn first, so the forced reply answers it.
 - **Per-group Author's Note**: Each group carries a note; a footer toggle fills the chat's Author's Note with it and clears it again. A layout can override it for one scene. The toggle is saved with the chat, so it comes back on after a refresh and follows the note if you edit it or switch layout; typing over the note by hand turns it off.
 - **Follows the chat**: Opens on group chats, closes elsewhere. The wand menu toggles it by hand.
 

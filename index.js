@@ -1092,7 +1092,7 @@ function refreshGroupControlPanel() {
 /**
  * Mutes or unmutes a member of the open group chat. Muted members stay in the
  * group (and in its prompt as far as the group's settings say) but aren't
- * picked to reply; a forced turn still reaches them.
+ * picked to reply, and can't be given a forced turn.
  * @param {string} avatar Avatar file name of the character
  * @param {boolean} shouldMute Target state: true = muted, false = in the scene
  * @returns {Promise<boolean>} Whether the group was actually changed
@@ -2614,10 +2614,12 @@ function makeCardRow(avatar) {
     });
     row.appendChild(member.label);
 
-    // Toggle 2: force a turn (self-resets once generation finishes). Works for
-    // muted members too: a muted character can still be given one line.
-    const turn = makeIconToggle('gr-turn', 'fa-comment-dots', t`Make this character speak next`);
-    turn.input.disabled = !group || !character;
+    // Toggle 2: force a turn (self-resets once generation finishes). Only for
+    // members in the scene: a muted character is greyed out until unmuted.
+    const turn = makeIconToggle('gr-turn', 'fa-comment-dots', isMuted
+        ? t`Muted: bring into the scene to give them a turn`
+        : t`Make this character speak next`);
+    turn.input.disabled = !group || !character || isMuted;
     turn.input.addEventListener('change', async () => {
         if (!turn.input.checked) {
             return;
