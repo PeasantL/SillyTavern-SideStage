@@ -2,11 +2,11 @@ Image half forked from baruvibe/SillyTavern-CharImgViewer
 
 # 🎭 SideStage for SillyTavern
 
-A right-hand dock for group chats: who is in the scene, how the scene opens,
+A right-hand strip for group chats: who is in the scene, how the scene opens,
 whose turn it is, and what it all looks like. SideStage merges two extensions
 — **Group Roster** (the cast list and turn controls) and **Character Image
-Viewer** (the frameless viewer and its gallery) — into one panel with one
-settings drawer.
+Viewer** (the image viewer and its gallery) — into one strip down the right
+edge, dressed in your SillyTavern theme, with one settings drawer.
 
 ## ✨ Features
 
@@ -97,12 +97,13 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 
 ### Images
 
-- **Auto-Open Viewer**: When a character is selected, the frameless viewer appears showing the first image. Can be turned off in settings.
+- **One strip**: The images are the strip's bottom section, under the roster, full strip width and shaped to each image. Nothing floats, drags or resizes; the strip is fixed furniture beside the chat.
+- **Auto-Open Viewer**: When the character on stage has images, the image section appears; when they have none, it goes away. Can be turned off in settings.
 - **Greeting-Aware**: Opens on the image referenced by the greeting currently on screen, and follows along when you swipe to an alternate greeting or start a new chat. Toggled by **Change with Greeting**.
 - **Deep Scan**: Finds image URLs hidden anywhere in the character's data (Description, Personality, Scenario, Alternate Greetings, character book, and so on).
-- **Group Chat Support**: In a group, every member's card is scanned and the results are merged into one list.
-- **Immersive Viewer**: Transparent frameless window with hover-revealed controls, slideshow navigation (`<` `>`, arrow keys, `Escape`), aspect-ratio-locked resize, auto-fit on image change, and a reset-position button.
-- **Gallery**: A thumbnail grid of every image found, reached from the viewer's gallery button.
+- **Group Chat Support**: In a group, the images follow one member: the one focused in the roster, else whoever is taking the turn, else whoever spoke last. With none of those, every member's images are merged into one list.
+- **Viewer**: Slideshow navigation (`<` `>`, arrow keys), shown on hover or tap. `Escape` closes it until the chat changes.
+- **Gallery**: A thumbnail grid of every image found, reached from the viewer's gallery button. It takes the roster's place in the strip until closed.
 - **Chat-Aware Cleanup**: Closing a chat closes the viewer and gallery.
 
 ## 📥 Installation
@@ -124,7 +125,7 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 - **Rewrite a reply**: The button row above the message box. They run on the
   connection profile selected in SillyTavern; **Directive**,
   **Spell check** and **OOC** read the message box, so type there first.
-- **Open the gallery**: The gallery button in the viewer's overlay controls.
+- **Open the gallery**: The gallery button in the image's top-right corner.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
 - **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
   - *Group* — choose which group you're editing (and see whether it is a world's group); ⟳ syncs the world groups; edit its Author's Note.

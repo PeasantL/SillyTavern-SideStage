@@ -1,10 +1,10 @@
 /**
- * SideStage — the right-hand dock: who is in the scene, whose turn it is, and
+ * SideStage — the right-hand strip: who is in the scene, whose turn it is, and
  * what the scene looks like.
  *
  * Merged from two extensions, Group Roster (the cast list, turn controls and
- * Author's Note) and Character Image Viewer (the frameless viewer and its
- * gallery). The two halves keep their original accessors on purpose — the
+ * Author's Note) and Character Image Viewer (the image viewer and its
+ * gallery), now sections of one strip. The two halves keep their original accessors on purpose — the
  * roster imports live bindings from script.js, the image half reads
  * SillyTavern.getContext() — so the merge stayed a move of working code rather
  * than a rewrite of it.
@@ -2614,6 +2614,28 @@ function mountAssistBar() {
 
 // #region Roster panel
 
+// The strip: one fixed column on the right edge holding everything SideStage
+// shows — the roster, the gallery and the image — stacked as sections of one
+// panel rather than as separate windows. Sections mount into it as they open;
+// it goes away with its last one. Their order on screen is set in style.css,
+// so the order they happen to open in does not matter.
+const STRIP_ID = 'sideStage';
+
+function mountInStrip(html) {
+    let $strip = $(`#${STRIP_ID}`);
+    if (!$strip.length) {
+        $strip = $(`<div id="${STRIP_ID}" class="ss-strip"></div>`).appendTo('body');
+    }
+    return $(html).appendTo($strip);
+}
+
+function pruneStrip() {
+    const $strip = $(`#${STRIP_ID}`);
+    if ($strip.length && !$strip.children('.ss-section').length) {
+        $strip.remove();
+    }
+}
+
 function isPanelOpen() {
     return $(`#${PANEL_ID}`).length > 0;
 }
@@ -2626,6 +2648,7 @@ function closePanel() {
     }
 
     $win.remove();
+    pruneStrip();
 }
 
 /**
@@ -2862,13 +2885,11 @@ function refreshPanel() {
     }
 }
 
-/** Creates the draggable panel — same template, size and container as the Gallery. */
 /**
- * Creates the floating roster window.
+ * Mounts the roster as the strip's top section, or takes it out again.
  * Deliberately avoids ST's built-in draggable stack, which inherits the core
  * `.draggable` rule that forces 100vw/100vh below 1000px and eats the whole
- * screen on a tablet. This mirrors the Character Image Viewer's own window
- * instead: position fixed, jQuery UI drag/resize, identical spawn box.
+ * screen on a tablet.
  */
 function openPanel() {
     if (isPanelOpen()) {
@@ -2877,7 +2898,7 @@ function openPanel() {
     }
 
     const html = `
-        <div id="${PANEL_ID}" class="gr-window ss-dock">
+        <div id="${PANEL_ID}" class="ss-section gr-panel">
             <div class="gr-header">
                 <span class="gr-title">${t`SideStage`}<small id="groupRosterStatus" class="gr-status"></small></span>
                 <div id="groupRosterSync" class="gr-header-btn fa-solid fa-rotate fa-fw interactable" tabindex="0"></div>
@@ -2897,8 +2918,7 @@ function openPanel() {
             </div>
         </div>`;
 
-    $('body').append(html);
-    const $win = $(`#${PANEL_ID}`);
+    const $win = mountInStrip(html);
 
     $win.find('#groupRosterSync').on('click keydown', function (e) {
         if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') {
@@ -3624,83 +3644,6 @@ function deepScanForImages(obj, foundSet, visited = new WeakSet()) {
   );
 }
 
-// The viewer's home: flush with the right edge, 24px up from the bottom.
-// The horizontal half is left to CSS, so the browser keeps the window in the
-// corner through a resize, an orientation change or an iPad app switch without
-// JavaScript having to catch up a frame later. The vertical half cannot be:
-// iOS resolves `bottom` on a fixed element against the layout viewport, which
-// runs on under the browser chrome, and the window disappears behind it.
-function getSpawnTop(height) {
-  return Math.max(0, window.innerHeight - height - 24);
-}
-
-// The right-hand column's width, so the viewer spawns exactly as wide as the
-// dock above it. Mirrors --ss-column in style.css: max(220px, 20dvw).
-function columnWidth() {
-  return Math.max(220, window.innerWidth * 0.2);
-}
-
-// Where a window is *meant* to sit, so a viewport change can be re-applied from
-// the intent rather than from wherever the element currently happens to be.
-const ANCHOR_KEY = "civAnchor";
-const FOLLOW_SPAWN_KEY = "civFollowSpawn";
-
-// Clamps an intended position to the viewport and writes it. Pure function of
-// (intent, viewport size): running it repeatedly always lands in the same spot.
-function applyPosition($win, top, left) {
-  const maxTop = Math.max(0, window.innerHeight - $win.outerHeight());
-  const maxLeft = Math.max(0, window.innerWidth - $win.outerWidth());
-  $win.css({
-    top: `${Math.max(0, Math.min(top, maxTop))}px`,
-    left: `${Math.max(0, Math.min(left, maxLeft))}px`,
-    right: "auto",
-    bottom: "auto",
-  });
-}
-
-// Records the layout position. Deliberately reads css(), not
-// getBoundingClientRect(): on iOS the rect of a fixed element is reported
-// against the visual viewport, which drifts while the browser toolbar animates
-// or the app is being switched back to.
-function rememberAnchor($win) {
-  $win.data(ANCHOR_KEY, {
-    top: parseFloat($win.css("top")) || 0,
-    left: parseFloat($win.css("left")) || 0,
-  });
-}
-
-// Send the viewer home: pinned to the right edge in CSS, sat on a top the
-// current viewport height decides.
-function anchorViewerToSpawn($win) {
-  $win.data(FOLLOW_SPAWN_KEY, true);
-  $win.removeData(ANCHOR_KEY);
-  $win.css({
-    top: `${getSpawnTop($win.outerHeight())}px`,
-    left: "auto",
-    right: "0px",
-    bottom: "auto",
-  });
-}
-
-// Swaps the edge pinning for explicit top/left pixels. Drag and resize both
-// move a window by its top-left corner, which a right/bottom pin would fight.
-function pinViewerToPixels($win) {
-  const style = window.getComputedStyle($win[0]);
-  let top = parseFloat(style.top);
-  let left = parseFloat(style.left);
-  if (!Number.isFinite(top) || !Number.isFinite(left)) {
-    const rect = $win[0].getBoundingClientRect();
-    top = rect.top;
-    left = rect.left;
-  }
-  $win.css({ top: `${top}px`, left: `${left}px`, right: "auto", bottom: "auto" });
-}
-
-function resetViewerPosition() {
-  if (!viewerState) return;
-  anchorViewerToSpawn(viewerState.$win);
-}
-
 // --- 2. SETTINGS ---
 const imageDefaults = Object.freeze({
   autoOpen: true,
@@ -3873,6 +3816,9 @@ const GALLERY_ID = "civ-main-gallery-window";
 let viewerState = null; // { $win, $img, index, images, failures }
 
 // --- 4. DISPLAY ---
+// Both are sections of the strip (see mountInStrip()). The gallery takes the
+// roster's place while it is open — a drill-down you open, pick from and
+// dismiss — and closing it brings the roster back.
 function spawnGalleryWindow(images, charName) {
   $(`#${GALLERY_ID}`).remove();
 
@@ -3885,7 +3831,7 @@ function spawnGalleryWindow(images, charName) {
     .join("");
 
   const html = `
-      <div id="${GALLERY_ID}" class="civ-window-standard ss-dock">
+      <div id="${GALLERY_ID}" class="ss-section civ-gallery">
           <div class="civ-header">
               <span>Gallery: ${escapeHtml(charName)} (${images.length})</span>
               <div class="civ-close-btn gr-header-btn fa-solid fa-circle-xmark fa-fw interactable"
@@ -3896,10 +3842,12 @@ function spawnGalleryWindow(images, charName) {
           </div>
       </div>`;
 
-  $("body").append(html);
-  const $win = $(`#${GALLERY_ID}`);
+  const $win = mountInStrip(html);
 
-  const close = () => $win.remove();
+  const close = () => {
+    $win.remove();
+    pruneStrip();
+  };
   $win
     .find(".civ-close-btn")
     .on("click", close)
@@ -3934,49 +3882,21 @@ function spawnGalleryWindow(images, charName) {
 function closeViewer() {
   $(`#${SINGLE_VIEWER_ID}`).remove();
   viewerState = null;
+  pruneStrip();
 }
 
 function closeAllWindows() {
-  $(".civ-window-standard, .civ-window-frameless").remove();
+  $(`#${SINGLE_VIEWER_ID}, #${GALLERY_ID}`).remove();
   viewerState = null;
+  pruneStrip();
 }
 
-// Re-shape the window to the incoming image. Keeping the old frame would
-// letterbox a portrait image inside a landscape window, since the <img> is
-// object-fit: contain.
+// The section is as wide as the strip; its height follows the image through
+// CSS aspect-ratio (capped in style.css), so a portrait image is never
+// letterboxed inside a landscape frame.
 function fitViewerToRatio(ratio) {
   if (!viewerState || !(ratio > 0)) return;
-  const $win = viewerState.$win;
-
-  const currentW = $win.outerWidth();
-  const currentH = $win.outerHeight();
-  if (!currentW || !currentH) return;
-  // Nothing to do for images that are already the same shape.
-  if (Math.abs(currentW / currentH - ratio) < 0.01) return;
-
-  // Keep the width the user settled on and derive the height from the new
-  // ratio, capped so a tall image cannot run off the screen.
-  let width = Math.min(currentW, window.innerWidth * 0.9);
-  let height = width / ratio;
-  const maxH = window.innerHeight * 0.9;
-  if (height > maxH) {
-    height = maxH;
-    width = height * ratio;
-  }
-
-  $win.css({ width: `${width}px`, height: `${height}px` });
-
-  if ($win.data(FOLLOW_SPAWN_KEY)) {
-    anchorViewerToSpawn($win);
-    return;
-  }
-
-  // Grow from the bottom-right corner so a window the user placed by hand
-  // stays visually put instead of spilling down and to the right.
-  const top = (parseFloat($win.css("top")) || 0) + currentH - height;
-  const left = (parseFloat($win.css("left")) || 0) + currentW - width;
-  $win.data(ANCHOR_KEY, { top, left });
-  applyPosition($win, top, left);
+  viewerState.$win.css("aspect-ratio", String(ratio));
 }
 
 // Reads the live list off viewerState so a refreshed list is actually used.
@@ -3992,29 +3912,16 @@ function updateImage(newIndex) {
   // Remembered on show rather than at handoff, so the last thing on screen is
   // what comes back even if the turn ends without another rescan.
   if (viewerIdentityKey) lastViewedByIdentity.set(viewerIdentityKey, list[index]);
-
-  const probe = new Image();
-  probe.onload = () => {
-    // The user may have navigated on while this was loading.
-    if (!viewerState || viewerState.index !== index) return;
-    const ratio = probe.naturalWidth / probe.naturalHeight;
-    if (!(ratio > 0)) return;
-    if (viewerState.$win.data("ui-resizable"))
-      viewerState.$win.resizable("option", "aspectRatio", ratio);
-    fitViewerToRatio(ratio);
-  };
-  probe.onerror = () => {};
-  probe.src = list[index];
 }
 
 // ──────────────────────────────────────────────
-//  SINGLETON viewer: 20vw wide | bottom-right | 24px from bottom | aspect-ratio locked
-//  If the window already exists, just switch the image.
+//  SINGLETON viewer: the strip's image section, full strip width.
+//  If it already exists, just switch the image.
 // ──────────────────────────────────────────────
 function spawnSingleImageWindow(startIndex, allImages) {
   if (!Array.isArray(allImages) || allImages.length === 0) return;
 
-  // ── Singleton: reuse existing window ──
+  // ── Singleton: reuse existing section ──
   if (viewerState && $(`#${SINGLE_VIEWER_ID}`).length > 0) {
     viewerState.images = allImages;
     viewerState.failures = 0;
@@ -4027,178 +3934,89 @@ function spawnSingleImageWindow(startIndex, allImages) {
 
   const currentIndex =
     ((startIndex % allImages.length) + allImages.length) % allImages.length;
-  const spawnKey = lastContextKey;
 
-  // Pre-load the image to read its natural dimensions
-  const preloader = new Image();
-  preloader.src = allImages[currentIndex];
+  const html = `
+      <div id="${SINGLE_VIEWER_ID}" class="ss-section civ-viewer">
+          <div class="civ-overlay-container">
+              <div class="civ-icon-btn civ-gallery-btn-round" title="Open Gallery" role="button"
+                   tabindex="0" aria-label="Open gallery">
+                  <i class="fa-solid fa-images"></i>
+              </div>
+          </div>
+          <div class="civ-nav-arrow civ-nav-left" title="Previous" role="button"
+               tabindex="0" aria-label="Previous image">
+              <i class="fa-solid fa-chevron-left"></i>
+          </div>
+          <div class="civ-nav-arrow civ-nav-right" title="Next" role="button"
+               tabindex="0" aria-label="Next image">
+              <i class="fa-solid fa-chevron-right"></i>
+          </div>
+          <div class="civ-img-wrap">
+              <img id="civ-target-img" alt="Character image" />
+          </div>
+      </div>`;
 
-  const buildWindow = () => {
-    // The character may have changed while the preloader was in flight.
-    if (spawnKey !== lastContextKey) return;
+  const $win = mountInStrip(html);
+  const $img = $win.find("#civ-target-img");
 
-    const natW = preloader.naturalWidth || 400;
-    const natH = preloader.naturalHeight || 300;
-    const aspectRatio = natW / natH;
+  // ── Store singleton state before wiring handlers that read it ──
+  viewerState = {
+    $win,
+    $img,
+    index: currentIndex,
+    images: allImages,
+    failures: 0,
+  };
 
-    // ── Position & Size ──────────────────────────
-    // Preferred width is the dock's column, capped so neither dimension can
-    // leave the viewport.
-    const maxH = window.innerHeight * 0.5;
-    const maxW = window.innerWidth * 0.9;
-    let winW = Math.min(columnWidth(), maxW);
-    let winH = winW / aspectRatio;
-
-    if (winH > maxH) {
-      winH = maxH;
-      winW = winH * aspectRatio;
+  // The image itself reports its shape, so there is no separate probe to race
+  // a later navigation: whatever loaded is what is on screen.
+  $img.on("load", () => {
+    if (!viewerState) return;
+    viewerState.failures = 0;
+    fitViewerToRatio($img[0].naturalWidth / $img[0].naturalHeight);
+  });
+  // Skip past dead links instead of showing a broken image.
+  $img.on("error", () => {
+    if (!viewerState) return;
+    viewerState.failures += 1;
+    if (
+      viewerState.images.length > 1 &&
+      viewerState.failures < viewerState.images.length
+    ) {
+      updateImage(viewerState.index + 1);
+    } else {
+      viewerState.$win.addClass("civ-load-error");
     }
-    if (winW > maxW) {
-      winW = maxW;
-      winH = winW / aspectRatio;
-    }
+  });
 
-    const top = getSpawnTop(winH);
-
-    const html = `
-          <div id="${SINGLE_VIEWER_ID}" class="civ-window-frameless"
-               style="top: ${top}px; right: 0; width: ${winW}px; height: ${winH}px;">
-              <div class="civ-overlay-container">
-                  <div class="civ-icon-btn civ-drag-handle" title="Move">
-                      <i class="fa-solid fa-grip"></i>
-                  </div>
-                  <div class="civ-icon-btn civ-reset-pos-btn" title="Reset Position" role="button"
-                       tabindex="0" aria-label="Reset position">
-                      <i class="fa-solid fa-arrows-to-dot"></i>
-                  </div>
-                  <div class="civ-icon-btn civ-gallery-btn-round" title="Open Gallery" role="button"
-                       tabindex="0" aria-label="Open gallery">
-                      <i class="fa-solid fa-images"></i>
-                  </div>
-              </div>
-              <div class="civ-nav-arrow civ-nav-left" title="Previous" role="button"
-                   tabindex="0" aria-label="Previous image">
-                  <i class="fa-solid fa-chevron-left"></i>
-              </div>
-              <div class="civ-nav-arrow civ-nav-right" title="Next" role="button"
-                   tabindex="0" aria-label="Next image">
-                  <i class="fa-solid fa-chevron-right"></i>
-              </div>
-              <div class="civ-img-wrap">
-                  <img id="civ-target-img" alt="Character image"
-                       src="${escapeHtml(allImages[currentIndex])}" />
-              </div>
-          </div>`;
-
-    $("body").append(html);
-    const $win = $(`#${SINGLE_VIEWER_ID}`);
-    const $img = $win.find("#civ-target-img");
-
-    // ── Store singleton state before wiring handlers that read it ──
-    viewerState = {
-      $win,
-      $img,
-      index: currentIndex,
-      images: allImages,
-      failures: 0,
-    };
-    $win.data(FOLLOW_SPAWN_KEY, true);
-
-    // Draggable & Resizable (locked to aspect ratio)
-    if ($.fn.draggable)
-      $win.draggable({
-        handle: ".civ-drag-handle",
-        containment: "window",
-        start: function () {
-          pinViewerToPixels($(this));
-        },
-        stop: function () {
-          $(this).data(FOLLOW_SPAWN_KEY, false);
-          rememberAnchor($(this));
-        },
-      });
-    if ($.fn.resizable)
-      $win.resizable({
-        handles: "se",
-        aspectRatio: aspectRatio,
-        // The handle drags the bottom-right corner, so the window has to be
-        // held by its top-left one while it is being resized.
-        start: function () {
-          pinViewerToPixels($(this));
-        },
-        stop: function () {
-          const $this = $(this);
-          if ($this.data(FOLLOW_SPAWN_KEY)) anchorViewerToSpawn($this);
-          else rememberAnchor($this);
-        },
-      });
-
-    // Skip past dead links instead of showing a broken image.
-    $img.on("load", () => {
-      if (viewerState) viewerState.failures = 0;
-    });
-    $img.on("error", () => {
-      if (!viewerState) return;
-      viewerState.failures += 1;
-      if (
-        viewerState.images.length > 1 &&
-        viewerState.failures < viewerState.images.length
-      ) {
-        updateImage(viewerState.index + 1);
-      } else {
-        viewerState.$win.addClass("civ-load-error");
+  $win
+    .find(".civ-gallery-btn-round")
+    .on("click", openGallery)
+    .on("keydown", (e) => {
+      if (isActivationKey(e)) {
+        e.preventDefault();
+        openGallery();
       }
     });
 
-    // ── Gallery button (replaces close) ──
-    $win
-      .find(".civ-gallery-btn-round")
-      .on("click", openGallery)
-      .on("keydown", (e) => {
-        if (isActivationKey(e)) {
-          e.preventDefault();
-          openGallery();
-        }
-      });
-
-    $win
-      .find(".civ-reset-pos-btn")
-      .on("click", (e) => {
-        e.stopPropagation();
-        resetViewerPosition();
-      })
-      .on("keydown", (e) => {
-        if (isActivationKey(e)) {
-          e.preventDefault();
-          resetViewerPosition();
-        }
-      });
-
-    const step = (delta) => {
-      if (viewerState) updateImage(viewerState.index + delta);
-    };
-    $win.find(".civ-nav-left").on("click", (e) => {
-      e.stopPropagation();
-      step(-1);
-    });
-    $win.find(".civ-nav-right").on("click", (e) => {
-      e.stopPropagation();
-      step(1);
-    });
-    $win.find(".civ-nav-arrow").on("keydown", function (e) {
-      if (!isActivationKey(e)) return;
-      e.preventDefault();
-      step($(this).hasClass("civ-nav-left") ? -1 : 1);
-    });
+  const step = (delta) => {
+    if (viewerState) updateImage(viewerState.index + delta);
   };
+  $win.find(".civ-nav-left").on("click", (e) => {
+    e.stopPropagation();
+    step(-1);
+  });
+  $win.find(".civ-nav-right").on("click", (e) => {
+    e.stopPropagation();
+    step(1);
+  });
+  $win.find(".civ-nav-arrow").on("keydown", function (e) {
+    if (!isActivationKey(e)) return;
+    e.preventDefault();
+    step($(this).hasClass("civ-nav-left") ? -1 : 1);
+  });
 
-  // Wait for preloader, or build immediately if already cached
-  if (preloader.complete && preloader.naturalWidth > 0) {
-    buildWindow();
-  } else {
-    preloader.onload = buildWindow;
-    preloader.onerror = buildWindow;
-  }
+  updateImage(currentIndex);
 }
 
 // --- 5. SCAN LOGIC ---
@@ -4227,6 +4045,29 @@ function performScan() {
 
 // --- 6. EVENT WIRING ---
 let lastContextKey = null;
+// Escape closed the image section: keep it closed until the chat changes,
+// rather than bringing it back on the next turn.
+let viewerDismissed = false;
+
+/**
+ * Points the image section at a fresh scan. It follows the cast: opened when
+ * the character on stage has images (and auto-open is on), closed when they
+ * have none, so in a group it comes and goes with the turn.
+ * @param {{images: string[]}} result Scan result
+ * @param {number} index Image to land on
+ */
+function showImages(result, index) {
+  const open = viewerState && $(`#${SINGLE_VIEWER_ID}`).length > 0;
+  if (result.images.length === 0) {
+    if (open) closeViewer();
+  } else if (open) {
+    viewerState.images = result.images;
+    viewerState.failures = 0;
+    updateImage(index);
+  } else if (imageSettings.autoOpen && !viewerDismissed) {
+    spawnSingleImageWindow(index, result.images);
+  }
+}
 
 function handleContextChange() {
   const ctx = getSTContext();
@@ -4245,6 +4086,7 @@ function handleContextChange() {
   lastViewedByIdentity.clear();
   viewerIdentityKey = null;
   draftedAvatar = null;
+  viewerDismissed = false;
   if (key === null) return;
 
   const result = scanAndGetImages();
@@ -4297,8 +4139,7 @@ function handleMessageSwiped(mesId) {
 /**
  * The image source may have changed — a different character is being shown — so
  * the viewer re-aims at whatever the incoming cast was last left on, and at the
- * top of the list for a cast that has not been seen yet. A closed viewer is
- * left closed: only a context change opens one uninvited.
+ * top of the list for a cast that has not been seen yet.
  */
 function refocusViewer() {
   if (lastContextKey === null) return;
@@ -4314,15 +4155,7 @@ function refocusViewer() {
   const startIndex = Math.max(0, recallViewedIndex(nextKey, result.images));
   viewerIdentityKey = nextKey;
 
-  if (viewerState && $(`#${SINGLE_VIEWER_ID}`).length > 0) {
-    if (result.images.length === 0) {
-      closeViewer();
-    } else {
-      viewerState.images = result.images;
-      viewerState.failures = 0;
-      updateImage(startIndex);
-    }
-  }
+  showImages(result, startIndex);
 
   if ($(`#${GALLERY_ID}`).length > 0) {
     spawnGalleryWindow(result.images, result.charName);
@@ -4339,15 +4172,7 @@ function handleContentUpdate() {
   // A membership edit can hand the viewer to a different cast without a turn.
   viewerIdentityKey = getViewerIdentityKey(ctx);
 
-  if (viewerState && $(`#${SINGLE_VIEWER_ID}`).length > 0) {
-    if (result.images.length === 0) {
-      closeViewer();
-    } else {
-      viewerState.images = result.images;
-      viewerState.failures = 0;
-      updateImage(viewerState.index);
-    }
-  }
+  showImages(result, viewerState ? viewerState.index : 0);
 
   if ($(`#${GALLERY_ID}`).length > 0) {
     spawnGalleryWindow(result.images, result.charName);
@@ -4366,6 +4191,7 @@ $(document).on("keydown.civ", function (e) {
 
   if (e.key === "Escape") {
     e.preventDefault();
+    viewerDismissed = true;
     closeViewer();
   } else if (e.key === "ArrowLeft") {
     e.preventDefault();
@@ -4375,30 +4201,6 @@ $(document).on("keydown.civ", function (e) {
     updateImage(viewerState.index + 1);
   }
 });
-
-$(window).on(
-  "resize.civ",
-  debounce(() => {
-    // A backgrounded tab reports garbage viewport sizes; acting on them is
-    // what displaced the viewer on every app switch.
-    if (document.hidden) return;
-    if (!window.innerWidth || !window.innerHeight) return;
-
-    $(".civ-window-frameless").each(function () {
-      const $win = $(this);
-      // A window still in its spawn spot holds its own right edge; only the
-      // top has to be recomputed for the new viewport height.
-      if ($win.data(FOLLOW_SPAWN_KEY)) {
-        anchorViewerToSpawn($win);
-        return;
-      }
-      // No anchor means the window still sits where its CSS put it, which is
-      // already viewport-relative and needs no correction.
-      const anchor = $win.data(ANCHOR_KEY);
-      if (anchor) applyPosition($win, anchor.top, anchor.left);
-    });
-  }, 150),
-);
 
 function initImages() {
   const ctx = getSTContext();
