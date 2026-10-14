@@ -1192,20 +1192,7 @@ function isLayoutUsable(group, layout) {
  * @param {{input: string, output: string, character: object}} args
  */
 function applyLayoutGreeting(args) {
-    const group = getCurrentGroup();
-    const layout = getActiveLayout(getActiveStage());
-    const avatar = args?.character?.avatar;
-
-    if (!avatar || !group) {
-        return;
-    }
-
-    if (!isLayoutUsable(group, layout)) {
-        // A world group's mutes are its scene, so with no layout the muted sit
-        // the opening out too, where stock ST greets with every member.
-        if (getGroupWorld(group.id) && group.disabled_members?.includes(avatar)) {
-            args.output = ' ';
-        }
+    if (!sideStageDropsGreeting(args)) {
         return;
     }
 
@@ -1214,6 +1201,59 @@ function applyLayoutGreeting(args) {
     // space survives that check, is trimmed to nothing immediately after, and a
     // member whose first message is empty is dropped from the chat.
     args.output = ' ';
+}
+
+/**
+ * Whether SideStage drops this member's greeting from a new group chat: all of
+ * them when a layout writes the opening, and with no layout a world group's
+ * muted members (its mutes are its scene, where stock ST greets with everyone).
+ * @param {{character: object}} args
+ * @returns {boolean}
+ */
+function sideStageDropsGreeting(args) {
+    const group = getCurrentGroup();
+    const avatar = args?.character?.avatar;
+
+    if (!avatar || !group) {
+        return false;
+    }
+
+    if (isLayoutUsable(group, getActiveLayout(getActiveStage()))) {
+        return true;
+    }
+
+    return !!getGroupWorld(group.id) && !!group.disabled_members?.includes(avatar);
+}
+
+const QUIETED = Symbol('SideStage quieted');
+
+/**
+ * Skips other extensions' greeting pickers for the greetings SideStage drops.
+ *
+ * Extension-GroupGreetings in its Pick mode opens a "Pick a greeting" popup for
+ * every member with group greetings when a group chat is created, and whatever
+ * is picked would be thrown away. Its listener can't be told to stand down, so
+ * each other listener of the event is wrapped to run only for greetings
+ * SideStage keeps. Runs on APP_READY, once every extension has registered.
+ */
+function quietOtherGreetingPickers() {
+    const listeners = eventSource.events?.[event_types.CHARACTER_FIRST_MESSAGE_SELECTED];
+
+    if (!Array.isArray(listeners)) {
+        return;
+    }
+
+    listeners.forEach((listener, index) => {
+        if (listener === applyLayoutGreeting || listener[QUIETED]) {
+            return;
+        }
+
+        const quieted = function (args, ...rest) {
+            return sideStageDropsGreeting(args) ? undefined : listener.call(this, args, ...rest);
+        };
+        quieted[QUIETED] = true;
+        listeners[index] = quieted;
+    });
 }
 
 /**
@@ -4334,6 +4374,7 @@ jQuery(async () => {
         // layout pins. makeLast only moves this listener behind the ones already
         // registered, so it has to run once every extension has loaded.
         eventSource.makeLast(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
+        quietOtherGreetingPickers();
     });
     eventSource.on(event_types.CHAT_CHANGED, syncPanelToChat);
     eventSource.on(event_types.GROUP_UPDATED, refreshPanel);

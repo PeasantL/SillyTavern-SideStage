@@ -43,6 +43,7 @@ start a new chat with that group.
 - **A narrator**: Optional scene-setting text posted ahead of the turns — where you are, what has just happened. It reaches the prompt as narration rather than as anyone's dialogue.
 - **Per-layout Author's Note**: Optional; blank falls back to the group's.
 - **No layout**: Always available, and the default. Groups you haven't set a layout for behave as they always did, except that in a world group the muted members don't greet.
+- **No greeting pickers**: While a layout writes the opening (and for a world group's muted members), other extensions' greeting choices are skipped, so the Group Greetings extension's *Pick a greeting* popup doesn't appear for a greeting that would be replaced anyway.
 
 > [!NOTE]
 > Layouts from before 3.1 pinned one of each card's group greetings. Those still
