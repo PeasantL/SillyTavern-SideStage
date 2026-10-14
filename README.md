@@ -97,7 +97,7 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 ### Images
 
 - **One strip**: The images are the strip's bottom section, under the roster, full strip width and shaped to each image. Nothing floats, drags or resizes; the strip is fixed furniture beside the chat.
-- **Auto-Open Viewer**: When the character on stage has images, the image section appears; when they have none, it goes away. Can be turned off in settings.
+- **Auto-Open Viewer**: When the character on stage has images, the image section appears; when they have none, it goes away.
 - **Greeting-Aware**: Opens on the image referenced by the greeting currently on screen, and follows along when you swipe to an alternate greeting or start a new chat. Toggled by **Change with Greeting**.
 - **Deep Scan**: Finds image URLs hidden anywhere in the character's data (Description, Personality, Scenario, Alternate Greetings, character book, and so on).
 - **Group Chat Support**: In a group, the images follow one member: the one focused in the roster, else whoever is taking the turn, else whoever spoke last. With none of those, every member's images are merged into one list.
@@ -111,7 +111,7 @@ One setting, on by default: **Lock what the Card Editor manages**. The [Characte
 
 - **Card fields**: Name, description, greetings, alternate greetings, tags, avatar, favourite, talkativeness and the advanced definitions are read-only while a card is open, in the panel and in its ⛶ expanded editor (creating a new card is untouched).
 - **Card actions**: Import (button, external URL, files or links dropped on the page), rename, duplicate, delete, *Link to World Info*, *Import Card Lore* and *Replace / Update*, and the `/rename-char`, `/char-delete`, `/char-duplicate` and `/char-update` commands.
-- **Worlds**: A world's lorebook in the World Info editor: its entries are read-only (fields, on/off toggles, new, duplicate, move, delete, reordering and the sorting and memo tools), and it can't be renamed, duplicated or deleted. SillyTavern saves a lorebook whole from its own copy, so an edit there could put back what the Card Editor changed meanwhile. Ordinary lorebooks are untouched.
+- **Worlds**: A world's lorebook in the World Info editor: its entries are read-only (fields, on/off toggles, new, duplicate, move, delete, reordering and the sorting and memo tools), and it can't be renamed, duplicated or deleted; a notice atop the editor says so, as SillyTavern's own does over Advanced Formatting. SillyTavern saves a lorebook whole from its own copy, so an edit there could put back what the Card Editor changed meanwhile. Ordinary lorebooks are untouched.
 - **World groups**: Deleting a world's group, and adding or removing its members (also `/member-add`, `/member-remove`). Muting stays free.
 - **Saves**: SillyTavern still saves which chat a card last used, but only that, merged into the card file as it is now, instead of writing its whole (possibly stale) copy of the card over the editor's changes.
 
@@ -140,7 +140,7 @@ One setting, on by default: **Lock what the Card Editor manages**. The [Characte
   - *Group* — choose which world's group you're editing; ⟳ syncs the world groups; edit its Author's Note.
   - *Rewrite* — what the **Morality** and **Scene** buttons ask.
   - *Card Editor* — the lock.
-  - *Images* — *Open the viewer automatically on character select* and *Change with Greeting*.
+  - *Images* — *Change with Greeting*.
 
 ## 🧪 Tests
 

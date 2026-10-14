@@ -2832,10 +2832,6 @@ const settingsHtml = `
             <div class="ss-settings-section">
                 <div class="ss-settings-heading">Images</div>
                 <div class="ss-settings-toggles">
-                    <label class="checkbox_label" for="civ-auto-open" title="Opens the floating viewer whenever a character or group with images is selected. With this off there is no way to open the viewer, since the gallery is reached from it.">
-                        <input id="civ-auto-open" type="checkbox">
-                        <span>Open automatically</span>
-                    </label>
                     <label class="checkbox_label" for="civ-change-with-greeting" title="Opens on the image referenced by the greeting on screen, and switches when you swipe to an alternate greeting. With this off the viewer opens on the first image found and stays put until you navigate it yourself.">
                         <input id="civ-change-with-greeting" type="checkbox">
                         <span>Change with greeting</span>
@@ -2971,13 +2967,6 @@ function addSettings() {
         });
 
     // Image half of the same drawer.
-    $('#civ-auto-open')
-        .prop('checked', !!imageSettings.autoOpen)
-        .on('change', function () {
-            imageSettings.autoOpen = !!$(this).prop('checked');
-            saveSettingsDebounced();
-        });
-
     $('#civ-change-with-greeting')
         .prop('checked', !!imageSettings.changeWithGreeting)
         .on('change', function () {
@@ -3124,7 +3113,6 @@ function deepScanForImages(obj, foundSet, visited = new WeakSet()) {
 
 // --- 2. SETTINGS ---
 const imageDefaults = Object.freeze({
-  autoOpen: true,
   changeWithGreeting: true,
 });
 let imageSettings = Object.assign({}, imageDefaults);
@@ -3137,6 +3125,8 @@ function loadImageSettings(ctx) {
     ctx.extensionSettings[settingsKey],
   );
   imageSettings = ctx.extensionSettings[settingsKey];
+  // The viewer always opens by itself now (it is the only way in to it).
+  delete imageSettings.autoOpen;
 }
 
 // --- 3. ACTIVE CHARACTER RESOLUTION ---
@@ -3530,7 +3520,7 @@ function showImages(result, index) {
     viewerState.images = result.images;
     viewerState.failures = 0;
     updateImage(index);
-  } else if (imageSettings.autoOpen && !viewerDismissed) {
+  } else if (!viewerDismissed) {
     spawnSingleImageWindow(index, result.images);
   }
 }
@@ -3559,7 +3549,7 @@ function handleContextChange() {
   // Set before the window opens, so the image it lands on is what gets
   // remembered for this cast.
   viewerIdentityKey = getViewerIdentityKey(ctx);
-  if (imageSettings.autoOpen && result && result.images.length > 0) {
+  if (result && result.images.length > 0) {
     // Lead with whatever the greeting on screen points at.
     const startIndex = imageSettings.changeWithGreeting
       ? Math.max(0, getGreetingImageIndex(result.images))
@@ -4033,6 +4023,13 @@ function watchLock() {
             }
         }).observe(entries, { childList: true, subtree: true });
     }
+
+    // Like SillyTavern's own notice over Advanced Formatting's greyed-out options; shown by style.css (ss-lock-world).
+    $('#WorldInfo > .flex-container').first().after(`
+        <div id="ss_world_lock_notice" class="info-block warning">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>${t`This lorebook is a world: greyed-out options are managed by the Card Editor.`}</span>
+        </div>`);
 
     $(document).on('change', '#world_editor_select', applyLock);
     watchCardSaves();

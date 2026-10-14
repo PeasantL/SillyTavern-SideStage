@@ -924,3 +924,12 @@ body.ss-lock-group :is(#rm_group_delete, #rm_group_members [data-action="remove"
     cursor: not-allowed;
     filter: brightness(0.5);
 }
+
+/* The notice atop the World Info editor, only while it has a world open. */
+#ss_world_lock_notice {
+    display: none;
+}
+
+body.ss-lock-world #ss_world_lock_notice {
+    display: block;
+}
