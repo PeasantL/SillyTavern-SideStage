@@ -47,9 +47,6 @@ start a new chat with that group.
 - **No greeting pickers**: While a layout writes the opening (and for a world group's muted members), other extensions' greeting choices are skipped, so the Group Greetings extension's *Pick a greeting* popup doesn't appear for a greeting that would be replaced anyway.
 
 > [!NOTE]
-> Layouts from before 3.1 pinned one of each card's group greetings. They are
-> converted once, when SillyTavern starts: the pinned greeting becomes the card's
-> turn. Cards that greeted at random, or not at all, get a blank turn.
 > The Character Editor's World section can also write a layout's turns with
 > DeepSeek, as one scene.
 

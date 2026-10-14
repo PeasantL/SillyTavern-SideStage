@@ -20,7 +20,6 @@ import {
     menu_type,
     sendMessageAsUser,
     extractMessageBias,
-    unshallowCharacter,
     chat,
     chat_metadata,
     addOneMessage,
@@ -89,9 +88,6 @@ let focusedAvatar = null;
  * @property {string} text The card's turn: what it posts when a new chat opens with this layout. Written for
  *     this layout alone (it follows on from the turns before it), so it lives here rather than in the card.
  *     Blank posts nothing.
- *
- * Layouts saved before turns were kept in the layout pinned one of the card's group greetings instead; they are
- * converted once at start-up (convertOldTurns()).
  */
 
 /**
@@ -354,159 +350,6 @@ function getTurnText(entry) {
     return typeof entry.text === 'string' ? entry.text : '';
 }
 
-// #region Old layouts
-
-const OLD_ENTRY_KEYS = ['greets', 'greeting', 'greetingKey'];
-
-/**
- * Converts layout entries from before 3.1, which pinned one of the card's
- * group greetings ({active, greets, greeting, greetingKey}), into entries that
- * hold their own turn ({active, text}): the pinned greeting's text, or blank
- * for a card that didn't greet or greeted at random. Runs once at start-up
- * over every stage SideStage holds; the Character Editor converts the worlds'
- * lorebooks the same way (worlds.migrate_stage) when it opens the folder. This
- * region goes once nobody has layouts that old.
- */
-async function convertOldTurns() {
-    const stages = [
-        ...Object.values(getSettings().groups).map(stage => [stage, () => saveSettingsDebounced()]),
-        ...[...worldStages].map(([world, stage]) => [stage, () => saveWorldStageDebounced(world)]),
-    ];
-
-    for (const [stage, save] of stages) {
-        let changed = false;
-
-        for (const layout of stage.layouts) {
-            for (const [avatar, entry] of Object.entries(layout.cards)) {
-                if (!entry || typeof entry !== 'object'
-                    || (typeof entry.text === 'string' && !OLD_ENTRY_KEYS.some(key => key in entry))) {
-                    continue;
-                }
-
-                const text = typeof entry.text === 'string' ? entry.text : await getPinnedText(entry, avatar);
-
-                if (text === null) {
-                    continue;
-                }
-
-                const converted = { ...entry, active: entry.active === true, text };
-                OLD_ENTRY_KEYS.forEach(key => delete converted[key]);
-                layout.cards[avatar] = converted;
-                changed = true;
-            }
-        }
-
-        if (changed) {
-            save();
-        }
-    }
-
-    renderSettings();
-}
-
-/**
- * The text of the group greeting an old entry pinned: '' when it didn't greet,
- * greeted at random, or its pin no longer resolves; null when the card's
- * greetings can't be loaded (left for the next start).
- * @param {object} entry
- * @param {string} avatar
- * @returns {Promise<string|null>}
- */
-async function getPinnedText(entry, avatar) {
-    if (!entry.active || entry.greets === false) {
-        return '';
-    }
-
-    const chid = characters.findIndex(x => x.avatar === avatar);
-
-    if (chid === -1) {
-        return '';
-    }
-
-    try {
-        // A shallow card has no greetings loaded to read the pin from.
-        if (characters[chid].shallow) {
-            await unshallowCharacter(chid);
-        }
-    } catch (error) {
-        console.warn('[SideStage] Could not load a card to convert its old layout turn', avatar, error);
-        return null;
-    }
-
-    const pool = getGroupGreetings(characters[chid]);
-    const pinned = resolvePin(entry, pool);
-    return pinned === null ? '' : pool[pinned];
-}
-
-/**
- * The old pins' fingerprint of a greeting: FNV-1a (32-bit, hex) over its code
- * points, with runs of whitespace collapsed to one space and the ends trimmed.
- * Only read now, to find what an old pin pointed at.
- * @param {string} text
- * @returns {string}
- */
-function greetingKey(text) {
-    let hash = 0x811c9dc5;
-
-    for (const char of String(text ?? '').replace(/\s+/g, ' ').trim()) {
-        hash ^= char.codePointAt(0);
-        hash = Math.imul(hash, 0x01000193) >>> 0;
-    }
-
-    return hash.toString(16).padStart(8, '0');
-}
-
-/**
- * Where a pinned greeting is in a card's pool now: found by its fingerprint,
- * else by its stored index (the text was edited), else nowhere.
- * @param {LayoutEntry} entry
- * @param {string[]} pool
- * @returns {number|null}
- */
-function resolvePin(entry, pool) {
-    if (!Number.isInteger(entry.greeting)) {
-        return null;
-    }
-
-    if (entry.greetingKey) {
-        const index = pool.findIndex(x => greetingKey(x) === entry.greetingKey);
-
-        if (index !== -1) {
-            return index;
-        }
-    }
-
-    return entry.greeting < pool.length ? entry.greeting : null;
-}
-
-/**
- * A card's group greetings, as the old pins counted them.
- *
- * Precedence matches Extension-GroupGreetings' own reader so both agree on
- * which list is in play: Spec v3 group_only_greetings, with the legacy
- * extensions.group_greetings used only when v3 is present but empty.
- * @param {object} [character]
- * @returns {string[]}
- */
-function getGroupGreetings(character) {
-    const clean = (list) => list.filter(x => typeof x === 'string' && x.trim().length);
-    const specV3 = character?.data?.group_only_greetings;
-    const legacy = character?.data?.extensions?.group_greetings;
-
-    if (Array.isArray(specV3) && Array.isArray(legacy) && legacy.length && !specV3.length) {
-        return clean(legacy);
-    }
-    if (Array.isArray(specV3)) {
-        return clean(specV3);
-    }
-    if (Array.isArray(legacy)) {
-        return clean(legacy);
-    }
-    return [];
-}
-
-// #endregion
-
 /**
  * Drops stages whose group is gone. There is no group-deleted event — only
  * GROUP_CHAT_DELETED — so this sweeps once the group list is known rather than
@@ -626,15 +469,10 @@ async function fetchWorld(name) {
     return data && typeof data === 'object' && data.entries ? data : null;
 }
 
-/**
- * Whether a lorebook is a world: it carries SideStage's key. Lorebooks the
- * Character Editor marked the older way (extensions.character_editor.world)
- * count too, until the editor has converted them.
- * @returns {boolean}
- */
+/** @returns {boolean} Whether a lorebook is a world: it carries SideStage's key. */
 function isWorldLorebook(data) {
     const stage = data?.extensions?.[WORLD_KEY];
-    return Boolean((stage && typeof stage === 'object') || data?.extensions?.character_editor?.world);
+    return Boolean(stage && typeof stage === 'object');
 }
 
 /**
@@ -4434,8 +4272,7 @@ jQuery(async () => {
     eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
     eventSource.on(event_types.GROUP_CHAT_CREATED, openSceneFromLayout);
     eventSource.on(event_types.APP_READY, pruneOrphanStages);
-    eventSource.on(event_types.APP_READY, () => refreshWorlds().then(convertOldTurns)
-        .catch(error => console.error('[SideStage] Could not convert old layouts', error)));
+    eventSource.on(event_types.APP_READY, () => refreshWorlds());
     document.addEventListener('visibilitychange', onBackToTab);
     // A card's world can change in ST too (and a deleted card leaves its world).
     eventSource.on(event_types.CHARACTER_EDITED, syncWorldGroupsSoon);
