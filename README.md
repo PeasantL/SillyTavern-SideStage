@@ -108,7 +108,7 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 
 One setting, on by default: **Lock what the Card Editor manages**. The [Character Card Editor](https://github.com/PeasantL/character-editor) owns cards, worlds' lorebooks and their groups, so with the lock on SillyTavern can't change them behind its back. The controls stay where they are, greyed out like SillyTavern's own unavailable settings, and say where to go instead when clicked.
 
-- **Card fields**: Name, description, greetings, alternate greetings, tags, avatar, favourite, talkativeness and the advanced definitions are read-only while a card is open (creating a new card is untouched).
+- **Card fields**: Name, description, greetings, alternate greetings, tags, avatar, favourite, talkativeness and the advanced definitions are read-only while a card is open, in the panel and in its ⛶ expanded editor (creating a new card is untouched).
 - **Card actions**: Import (button, external URL, files or links dropped on the page), rename, duplicate, delete, *Link to World Info*, *Import Card Lore* and *Replace / Update*, and the `/rename-char`, `/char-delete`, `/char-duplicate` and `/char-update` commands.
 - **Worlds**: Renaming, duplicating and deleting a world's lorebook in the World Info editor (ordinary lorebooks are untouched).
 - **World groups**: Deleting a world's group, and adding or removing its members (also `/member-add`, `/member-remove`). Muting stays free.

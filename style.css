@@ -1040,3 +1040,9 @@ body.ss-lock-group :is(#rm_group_delete, #rm_group_members [data-action="remove"
 }
 
 /* Not pointer-events: none on the buttons themselves, so the not-allowed cursor shows; index.js stops the click. */
+
+/* The expanded (⛶) editor of a locked field, read-only: greyed like the field. */
+.maximized_textarea.ss-locked-field {
+    cursor: not-allowed;
+    filter: brightness(0.5);
+}

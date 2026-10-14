@@ -4219,6 +4219,26 @@ function applyLock() {
     document.body.classList.toggle('ss-lock-group', locked && isWorldGroupOpen());
 }
 
+/** @returns {boolean} Whether the field with this id is locked (see applyLock()). */
+function isLockedField(id) {
+    const field = id ? document.getElementById(id) : null;
+    return isLocked() && field?.dataset.ssLocked !== undefined;
+}
+
+/** Makes the expanded editor of a locked field read-only and greys it like the field. */
+function lockExpandedEditor(id) {
+    if (!isLockedField(id)) {
+        return;
+    }
+
+    for (const textarea of document.querySelectorAll('textarea.maximized_textarea')) {
+        if (textarea instanceof HTMLTextAreaElement && textarea.dataset.for === id) {
+            textarea.readOnly = true;
+            textarea.classList.add('ss-locked-field');
+        }
+    }
+}
+
 /**
  * Why a click on this element is locked, or ''.
  * @param {Element} el
@@ -4306,6 +4326,20 @@ function watchLock() {
             e.preventDefault();
             e.stopImmediatePropagation();
             toastLocked(reason);
+        }
+    }, true);
+
+    // The ⛶ expanded editor of a locked field: SillyTavern opens a free
+    // textarea that types into the field, so make it read-only too.
+    document.addEventListener('click', (e) => {
+        const button = e.target instanceof Element ? e.target.closest('.editor_maximize') : null;
+        if (button && isLocked()) {
+            setTimeout(() => lockExpandedEditor(String(button.getAttribute('data-for') ?? '')));
+        }
+    }, true);
+    document.addEventListener('beforeinput', (e) => {
+        if (e.target instanceof HTMLTextAreaElement && e.target.matches('.maximized_textarea') && isLockedField(e.target.dataset.for)) {
+            e.preventDefault();
         }
     }, true);
 
