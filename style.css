@@ -619,14 +619,6 @@ body.ss-tablet:not(.waifuMode):has(> .zoomed_avatar) .ss-strip :is(.gr-body, .gr
 }
 
 /* ---- Settings drawer ---------------------------------------------------- */
-.gr-settings-name {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .menu_button.disabled {
     pointer-events: none;
     opacity: 0.4;
@@ -649,13 +641,6 @@ body.ss-tablet:not(.waifuMode):has(> .zoomed_avatar) .ss-strip :is(.gr-body, .gr
       opacity: 1;
       background-color: var(--white20a);
   }
-}
-
-.gr-settings-avatar {
-    width: 24px;
-    height: 24px;
-    object-fit: cover;
-    border-radius: 50%;
 }
 
 /* ════════════════════ Character images ══════════════════════ */
@@ -900,114 +885,6 @@ body.ss-tablet:not(.waifuMode):has(> .zoomed_avatar) .ss-strip :is(.gr-body, .gr
     margin: 0;
 }
 
-/* Rows are real elements so a whole one can be dragged, which means the
-   columns are held in line by widths shared between the header and every row
-   rather than by a single grid. A card in the scene has its turn under the
-   columns: the row wraps, and the turn takes a line of its own. */
-.gr-layout-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-top: 4px;
-    max-width: 100%;
-    min-width: 0;
-}
-
-.gr-layout-head,
-.gr-layout-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    max-width: 100%;
-    min-width: 0;
-}
-
-/* No nowrap: on a narrow screen these labels wrap to two lines rather than
-   holding their columns open, since min-width:auto would otherwise size the
-   cell to the whole label and push the row past the drawer. */
-.gr-layout-head {
-    font-size: calc(var(--mainFontSize) * 0.75);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    opacity: 0.5;
-    text-align: center;
-}
-
-.gr-layout-row {
-    flex-wrap: wrap;
-}
-
-/* Every column is fixed and unshrinkable, so each row resolves its columns
-   identically and the header lines up with all of them. min-width:0 throughout
-   so a glyph or a label can't hold a column open past its stated width. */
-.gr-layout-grip {
-    flex: 0 0 16px;
-    min-width: 0;
-    text-align: center;
-    opacity: 0.4;
-    cursor: grab;
-}
-
-.gr-layout-grip:active {
-    cursor: grabbing;
-}
-
-/* The header's grip cell is a spacer, not a handle. */
-.gr-layout-head .gr-layout-grip {
-    cursor: default;
-}
-
-/* Wide enough for a name and no wider, so the toggle sits near the handle. A width the container decides rather
-   than the name's own, which would differ per row and take the alignment with
-   it; long names ellipsis instead. Clamped so it stays legible on a phone and
-   stops hoarding room on a wide screen. */
-.gr-layout-card {
-    flex-grow: 0;
-    flex-shrink: 0;
-    flex-basis: clamp(90px, 22%, 170px);
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    overflow: hidden;
-}
-
-.gr-layout-check {
-    flex: 0 0 52px;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0;
-}
-
-/* A line of its own under the columns, indented past the grip. */
-.gr-layout-turn {
-    flex: 1 0 100%;
-    max-width: calc(100% - 24px);
-    min-width: 0;
-    margin: 0 0 6px 24px;
-    resize: vertical;
-}
-
-/* forcePlaceholderSize keeps the gap the height of the row being moved. */
-.gr-layout-placeholder {
-    border: 1px dashed var(--SmartThemeBorderColor);
-    border-radius: 4px;
-    opacity: 0.6;
-}
-
-.gr-layout-row.ui-sortable-helper {
-    background-color: var(--black30a, rgba(0, 0, 0, 0.3));
-    border-radius: 4px;
-}
-
-#gr_layout_body {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
 .ss-settings-divider {
     height: 1px;
     margin: 12px 0;
@@ -1032,7 +909,8 @@ body.ss-tablet:not(.waifuMode):has(> .zoomed_avatar) .ss-strip :is(.gr-body, .gr
    SillyTavern already greys. index.js sets the body classes (applyLock()). */
 body.ss-lock :is(#character_import_button, #external_import_button, .external_import_button),
 body.ss-lock-card #form_create :is([id="renameCharButton"], [id="dupe_button"], [id="delete_button"], #favorite_button, #world_button, .open_alternate_greetings),
-body.ss-lock-world :is(#world_popup_name_button, #world_duplicate, #world_popup_delete),
+body.ss-lock-world :is(#world_popup_name_button, #world_duplicate, #world_popup_delete, #world_popup_new, #world_backfill_memos, #world_apply_current_sorting),
+body.ss-lock-world #world_popup_entries_list :is(.killSwitch, .menu_button, .drag-handle),
 body.ss-lock-group :is(#rm_group_delete, #rm_group_members [data-action="remove"], #rm_group_add_members [data-action="add"]) {
     filter: brightness(75%) grayscale(1);
     opacity: 0.5;

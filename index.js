@@ -58,9 +58,8 @@ import { saveWorldInfo } from '../../../world-info.js';
 // Read as a namespace, so a SillyTavern without worldInfoCache or reloadEditor
 // still loads SideStage (see refreshCachedLorebooks()).
 import * as worldInfo from '../../../world-info.js';
-import { waitUntilCondition, uuidv4, getSortableDelay } from '../../../utils.js';
+import { waitUntilCondition } from '../../../utils.js';
 import { t } from '../../../i18n.js';
-import { Popup } from '../../../popup.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 
 // ═══════════════════════ Group roster ═══════════════════════
@@ -315,18 +314,6 @@ function getLayoutOrder(group, layout) {
  */
 function getLayoutEntry(layout, avatar) {
     return layout.cards[avatar] ?? { active: false, text: '' };
-}
-
-/**
- * Writes part of a card's layout entry back, creating it if needed.
- * @param {string} groupId Group whose stage holds the layout
- * @param {Layout} layout
- * @param {string} avatar
- * @param {Partial<LayoutEntry>} patch
- */
-function setLayoutEntry(groupId, layout, avatar, patch) {
-    layout.cards[avatar] = { ...getLayoutEntry(layout, avatar), ...patch };
-    saveStage(groupId);
 }
 
 /**
@@ -2616,7 +2603,7 @@ function makeCardRow(avatar) {
 
 /**
  * Switches the open group's layout and brings every view of it back in step.
- * Shared by the panel footer's picker and the settings drawer's.
+ * Used by the panel footer's picker (layouts are edited in the Character Editor).
  * @param {string} id
  */
 async function setActiveLayout(id) {
@@ -2816,34 +2803,6 @@ const settingsHtml = `
             <div class="ss-settings-divider"></div>
 
             <div class="ss-settings-section">
-                <div class="ss-settings-heading">Greeting layouts</div>
-                <label for="gr_layout_select">Layout for this group</label>
-                <div class="flex-container alignItemsCenter">
-                    <select id="gr_layout_select" class="text_pole flex1"></select>
-                    <div id="gr_layout_new" class="menu_button menu_button_icon interactable" title="New layout">
-                        <i class="fa-solid fa-plus fa-fw"></i>
-                    </div>
-                    <div id="gr_layout_rename" class="menu_button menu_button_icon interactable" title="Rename layout">
-                        <i class="fa-solid fa-pen fa-fw"></i>
-                    </div>
-                    <div id="gr_layout_delete" class="menu_button menu_button_icon interactable" title="Delete layout">
-                        <i class="fa-solid fa-trash fa-fw"></i>
-                    </div>
-                </div>
-                <div id="gr_layout_body">
-                    <label for="gr_layout_narrator">Narrator opening</label>
-                    <textarea id="gr_layout_narrator" class="text_pole textarea_compact" rows="3"
-                              placeholder="Posted before the turns to set the scene. Leave blank for none."></textarea>
-                    <label for="gr_layout_note">Author's Note for this layout</label>
-                    <textarea id="gr_layout_note" class="text_pole textarea_compact" rows="3"
-                              placeholder="Overrides the group's note while this layout is selected"></textarea>
-                    <div id="gr_layout_cards" class="gr-layout-grid"></div>
-                </div>
-            </div>
-
-            <div class="ss-settings-divider"></div>
-
-            <div class="ss-settings-section">
                 <div class="ss-settings-heading">Rewrite</div>
                 <small class="ss-settings-hint">The rewrites run on the connection profile selected in SillyTavern (or the active connection when none is), and the asides send the whole chat.</small>
                 <label for="ss_morality_request">Morality asks</label>
@@ -2928,211 +2887,7 @@ function renderWorldRow() {
 
     status.textContent = getSettingsGroup()
         ? t`A world's group: its members are the world's cards, and they join and leave with the world. Mute and unmute them from the panel.`
-        : t`No world groups yet. Every world (a lorebook made a world in the Character Editor) gets its own group once it has a card; layouts and the Author's Note belong to those groups.`;
-}
-
-/** @returns {Layout|null} The layout the settings drawer edits. */
-function getSettingsLayout() {
-    return getActiveLayout(getSettingsStage());
-}
-
-/** Fills the layout dropdown for whichever group the drawer is showing. */
-function renderLayoutSelect() {
-    const stage = getSettingsStage();
-    const select = /** @type {HTMLSelectElement} */ (document.getElementById('gr_layout_select'));
-
-    if (!select) {
-        return;
-    }
-
-    select.innerHTML = '';
-    select.disabled = !stage;
-
-    // Always offered: a group with no layout selected is left entirely alone,
-    // which is the only way back to stock behaviour once layouts exist.
-    const none = document.createElement('option');
-    none.value = '';
-    none.textContent = t`No layout`;
-    select.appendChild(none);
-
-    for (const layout of stage?.layouts ?? []) {
-        const option = document.createElement('option');
-        option.value = layout.id;
-        option.textContent = layout.name;
-        select.appendChild(option);
-    }
-
-    select.value = stage?.activeLayoutId ?? '';
-    $('#gr_layout_new').toggleClass('disabled', !stage);
-    $('#gr_layout_rename').toggleClass('disabled', !getSettingsLayout());
-    $('#gr_layout_delete').toggleClass('disabled', !getSettingsLayout());
-}
-
-/**
- * Builds one checkbox cell of the layout matrix.
- * @param {{checked: boolean, disabled: boolean, title: string, onChange: function(boolean): void}} options
- * @returns {HTMLLabelElement}
- */
-function makeLayoutCheckbox({ checked, disabled, title, onChange }) {
-    const cell = document.createElement('label');
-    cell.classList.add('gr-layout-check');
-    cell.title = title;
-
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = checked;
-    input.disabled = disabled;
-    input.addEventListener('change', () => onChange(input.checked));
-
-    cell.appendChild(input);
-    return cell;
-}
-
-/**
- * Builds the text box for one card's turn.
- * @param {Layout} layout
- * @param {string} avatar
- * @param {object} [character]
- * @param {LayoutEntry} entry
- * @returns {HTMLTextAreaElement}
- */
-function makeTurnText(layout, avatar, character, entry) {
-    const name = character?.name ?? avatar;
-    const text = document.createElement('textarea');
-    text.classList.add('text_pole', 'textarea_compact', 'gr-layout-turn');
-    text.rows = 3;
-    text.value = getTurnText(entry);
-    text.placeholder = t`${name}'s turn when the scene opens. Blank: ${name} posts nothing.`;
-    text.disabled = !character;
-
-    text.addEventListener('input', () => {
-        setLayoutEntry(getSettingsGroupId(), layout, avatar, { text: String(text.value) });
-    });
-
-    return text;
-}
-
-/**
- * Builds one card's row. Rows are real elements rather than cells appended flat
- * into one grid, because a row has to be draggable as a unit; the columns are
- * held in line by fixed widths shared with the header instead. A card in the
- * scene has its turn under the row.
- * @param {Layout} layout
- * @param {string} avatar
- * @returns {HTMLElement}
- */
-function makeLayoutRow(layout, avatar) {
-    const character = getCharacterByAvatar(avatar);
-    const entry = getLayoutEntry(layout, avatar);
-
-    const row = document.createElement('div');
-    row.classList.add('gr-layout-row');
-    row.dataset.avatar = avatar;
-
-    const grip = document.createElement('i');
-    grip.classList.add('fa-solid', 'fa-grip-vertical', 'gr-layout-grip');
-    grip.title = t`Drag to change the order the scene opens in`;
-
-    const card = document.createElement('div');
-    card.classList.add('gr-layout-card');
-
-    const thumb = document.createElement('img');
-    thumb.classList.add('gr-settings-avatar');
-    thumb.src = getThumbnailUrl('avatar', avatar);
-    thumb.alt = character?.name ?? avatar;
-
-    const name = document.createElement('span');
-    name.classList.add('gr-settings-name');
-    name.textContent = character?.name ?? avatar;
-
-    if (!character) {
-        name.classList.add('gr-card-missing');
-        name.title = t`Character file not found`;
-    }
-
-    card.append(thumb, name);
-
-    const active = makeLayoutCheckbox({
-        checked: entry.active,
-        disabled: !character,
-        title: t`In the scene (unmuted) while this layout is selected; everyone in the scene has a turn`,
-        onChange: (checked) => {
-            setLayoutEntry(getSettingsGroupId(), layout, avatar, { active: checked });
-            renderLayoutCards();
-        },
-    });
-
-    row.append(grip, card, active);
-
-    if (entry.active) {
-        row.append(makeTurnText(layout, avatar, character, entry));
-    }
-
-    return row;
-}
-
-/** Paints the matrix: who is in the scene, in what order, and their turns. */
-function renderLayoutCards() {
-    const body = document.getElementById('gr_layout_body');
-    const container = document.getElementById('gr_layout_cards');
-
-    if (!body || !container) {
-        return;
-    }
-
-    const group = getSettingsGroup();
-    const layout = getSettingsLayout();
-
-    body.style.display = layout ? '' : 'none';
-
-    if (!layout) {
-        return;
-    }
-
-    container.innerHTML = '';
-
-    if (!group?.members?.length) {
-        const empty = document.createElement('div');
-        empty.classList.add('gr-empty');
-        empty.textContent = t`This group has no members.`;
-        container.appendChild(empty);
-        return;
-    }
-
-    const head = document.createElement('div');
-    head.classList.add('gr-layout-head');
-
-    for (const [label, className] of [['', 'gr-layout-grip'], [t`Card`, 'gr-layout-card'], [t`In scene`, 'gr-layout-check']]) {
-        const cell = document.createElement('span');
-        cell.classList.add(className);
-        cell.textContent = label;
-        head.appendChild(cell);
-    }
-
-    container.appendChild(head);
-
-    for (const avatar of getLayoutOrder(group, layout)) {
-        container.appendChild(makeLayoutRow(layout, avatar));
-    }
-}
-
-/**
- * Records the order the matrix was dragged into.
- *
- * Reads the order back out of the DOM rather than tracking the move, so it
- * stays right however jQuery UI got there. Nothing is re-rendered: the rows
- * are already where they belong, and rebuilding them under the widget that
- * just finished a drag is asking for trouble.
- */
-function saveLayoutOrder() {
-    const layout = getSettingsLayout();
-
-    if (!layout) {
-        return;
-    }
-
-    layout.order = $('#gr_layout_cards > .gr-layout-row').map((_, row) => row.dataset.avatar).get();
-    saveStage(getSettingsGroupId());
+        : t`No world groups yet. Every world (a lorebook made a world in the Character Editor) gets its own group once it has a card; layouts (edited in the Character Editor) and the Author's Note belong to those groups.`;
 }
 
 function renderSettings() {
@@ -3142,11 +2897,7 @@ function renderSettings() {
 
     renderGroupSelect();
     renderWorldRow();
-    renderLayoutSelect();
-    renderLayoutCards();
     $('#gr_roster_note').val(getSettingsStage()?.note ?? '').prop('disabled', !getSettingsStage());
-    $('#gr_layout_note').val(getSettingsLayout()?.note ?? '');
-    $('#gr_layout_narrator').val(getSettingsLayout()?.narrator ?? '');
     $('#ss_morality_request').val(getSettings().moralityRequest ?? '');
     $('#ss_scene_request').val(getSettings().sceneRequest ?? '');
 }
@@ -3198,140 +2949,6 @@ function addSettings() {
         // greys out for a group with no note at all.
         syncNoteToChat();
         refreshPanel();
-    });
-
-    $('#gr_layout_select').on('change', async function () {
-        const stage = getSettingsStage();
-
-        if (!stage) {
-            return;
-        }
-
-        stage.activeLayoutId = String($(this).val());
-        saveStage(getSettingsGroupId());
-
-        // Only the open group can be muted from here; another group's layout
-        // takes hold the next time a chat of that group starts. Its note is the
-        // same story: only the open chat is holding one right now.
-        if (getSettingsGroupId() === getCurrentGroup()?.id) {
-            syncNoteToChat();
-            await applyLayoutMutes();
-        }
-
-        renderSettings();
-        refreshPanel();
-    });
-
-    $('#gr_layout_new').on('click', async () => {
-        const stage = getSettingsStage();
-
-        if (!stage) {
-            toastr.warning(t`Create a group chat first.`);
-            return;
-        }
-
-        const name = await Popup.show.input(t`New layout`, t`Name for the new layout`, '');
-
-        if (!name) {
-            return;
-        }
-
-        /** @type {Layout} */
-        const layout = { id: uuidv4(), name: String(name).trim(), note: '', narrator: '', order: [], cards: {} };
-
-        // Seeded from who is in the scene right now, so a new layout starts out
-        // doing what the group already does and is edited down from there.
-        const group = getSettingsGroup();
-
-        for (const avatar of group?.members ?? []) {
-            if (!group.disabled_members?.includes(avatar)) {
-                layout.cards[avatar] = { active: true, text: '' };
-            }
-        }
-
-        stage.layouts.push(layout);
-        stage.activeLayoutId = layout.id;
-        saveStage(getSettingsGroupId());
-        renderSettings();
-        refreshPanel();
-    });
-
-    $('#gr_layout_rename').on('click', async () => {
-        const layout = getSettingsLayout();
-
-        if (!layout) {
-            return;
-        }
-
-        const name = await Popup.show.input(t`Rename layout`, t`New name`, layout.name);
-
-        if (!name) {
-            return;
-        }
-
-        layout.name = String(name).trim();
-        saveStage(getSettingsGroupId());
-        renderLayoutSelect();
-        refreshPanel();
-    });
-
-    $('#gr_layout_delete').on('click', async () => {
-        const stage = getSettingsStage();
-        const layout = getSettingsLayout();
-
-        if (!stage || !layout) {
-            return;
-        }
-
-        const confirmed = await Popup.show.confirm(t`Delete layout`, t`Delete "${layout.name}"?`);
-
-        if (!confirmed) {
-            return;
-        }
-
-        stage.layouts = stage.layouts.filter(x => x.id !== layout.id);
-        stage.activeLayoutId = '';
-        saveStage(getSettingsGroupId());
-        renderSettings();
-        refreshPanel();
-    });
-
-    $('#gr_layout_note').on('input', function () {
-        const layout = getSettingsLayout();
-
-        if (!layout) {
-            return;
-        }
-
-        layout.note = String($(this).val());
-        saveStage(getSettingsGroupId());
-        // This note wins over the group's, so whichever is in play is what the
-        // chat should be holding while the toggle is on.
-        syncNoteToChat();
-        refreshPanel();
-    });
-
-    $('#gr_layout_narrator').on('input', function () {
-        const layout = getSettingsLayout();
-
-        if (!layout) {
-            return;
-        }
-
-        layout.narrator = String($(this).val());
-        saveStage(getSettingsGroupId());
-    });
-
-    // Bound once to the container, which outlives the rows: sortable refreshes
-    // its item list on mousedown, so rebuilding the matrix doesn't strand it.
-    $('#gr_layout_cards').sortable({
-        items: '> .gr-layout-row',
-        handle: '.gr-layout-grip',
-        axis: 'y',
-        placeholder: 'gr-layout-placeholder',
-        forcePlaceholderSize: true,
-        delay: getSortableDelay(),
-        stop: saveLayoutOrder,
     });
 
     // Characters may still be loading when the drawer is built, so repaint the
@@ -4160,7 +3777,10 @@ function watchTablet() {
 const LOCKED_CARD_CONTROLS = '[id="renameCharButton"], [id="dupe_button"], [id="delete_button"], #favorite_button, #world_button, '
     + '[id="set_character_world"], #import_character_info, #replace_update, .open_alternate_greetings';
 const LOCKED_IMPORT = '#character_import_button, #external_import_button, .external_import_button';
-const LOCKED_WORLD_CONTROLS = '#world_popup_name_button, #world_duplicate, #world_popup_delete';
+const LOCKED_WORLD_CONTROLS = '#world_popup_name_button, #world_duplicate, #world_popup_delete, #world_popup_new, '
+    + '#world_backfill_memos, #world_apply_current_sorting, #world_popup_entries_list :is(.killSwitch, .menu_button, .drag-handle)';
+/** The World Info editor's entries; a world's are read-only while locked (its fields are disabled, see lockWorldEntries()). */
+const WORLD_ENTRIES = '#world_popup_entries_list';
 const LOCKED_GROUP_CONTROLS = '#rm_group_delete, #rm_group_members [data-action="remove"], #rm_group_add_members [data-action="add"]';
 /** Drop targets that take files for themselves (chat attachments, chat import, popups); a drop anywhere else imports cards. */
 const OWN_DROP_TARGETS = '#form_sheld, #select_chat_popup, .popup';
@@ -4213,10 +3833,35 @@ function applyLock() {
     }
 
     $('#char-management-dropdown option').filter(LOCKED_CARD_CONTROLS).prop('disabled', fields);
+    lockWorldEntries();
     document.body.classList.toggle('ss-lock-card', fields);
     document.body.classList.toggle('ss-lock', locked);
     document.body.classList.toggle('ss-lock-world', locked && isWorldInEditor());
     document.body.classList.toggle('ss-lock-group', locked && isWorldGroupOpen());
+}
+
+/**
+ * Disables the fields of the entries the World Info editor shows while it has
+ * a world's lorebook open, or lets them go. SillyTavern saves a lorebook whole
+ * from its own copy, so an edit there could put back what the Character Editor
+ * changed meanwhile. The entries are drawn a page (and an opened entry) at a
+ * time, so this runs again whenever the list changes.
+ */
+function lockWorldEntries() {
+    const locked = isLocked() && isWorldInEditor();
+
+    for (const el of document.querySelectorAll(`${WORLD_ENTRIES} :is(input, textarea, select)`)) {
+        if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) || el.type === 'hidden') {
+            continue;
+        }
+        if (locked && !el.disabled) {
+            el.disabled = true;
+            el.dataset.ssLocked = '';
+        } else if (!locked && el.dataset.ssLocked !== undefined) {
+            el.disabled = false;
+            delete el.dataset.ssLocked;
+        }
+    }
 }
 
 /** @returns {boolean} Whether the field with this id is locked (see applyLock()). */
@@ -4255,7 +3900,7 @@ function lockedReason(el) {
         return t`This card is managed by the Card Editor; change it there.`;
     }
     if (isWorldInEditor() && el.closest(LOCKED_WORLD_CONTROLS)) {
-        return t`This lorebook is a world; rename, duplicate or delete it in the Card Editor.`;
+        return t`This lorebook is a world; edit it in the Card Editor.`;
     }
     if (isWorldGroupOpen() && el.closest(LOCKED_GROUP_CONTROLS)) {
         return t`SideStage keeps this world's group in step with its cards; change the world in the Card Editor.`;
@@ -4366,6 +4011,27 @@ function watchLock() {
     const members = document.getElementById('rm_group_members');
     if (members) {
         new MutationObserver(applyLock).observe(members, { childList: true });
+    }
+
+    // A world's entries are dragged into a new order by their handle.
+    for (const type of ['pointerdown', 'mousedown', 'touchstart']) {
+        document.addEventListener(type, (e) => {
+            if (e.target instanceof Element && e.target.closest(`${WORLD_ENTRIES} .drag-handle`) && isLocked() && isWorldInEditor()) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+            }
+        }, { capture: true, passive: false });
+    }
+
+    const entries = document.querySelector(WORLD_ENTRIES);
+    if (entries) {
+        let queued = false;
+        new MutationObserver(() => {
+            if (!queued) {
+                queued = true;
+                setTimeout(() => { queued = false; lockWorldEntries(); });  // not requestAnimationFrame: it waits while the tab is hidden
+            }
+        }).observe(entries, { childList: true, subtree: true });
     }
 
     $(document).on('change', '#world_editor_select', applyLock);
