@@ -907,7 +907,7 @@ body.ss-tablet:not(.waifuMode):has(> .zoomed_avatar) .ss-strip :is(.gr-body, .gr
 /* Locked controls stay in place, greyed out like SillyTavern's own disabled
    buttons (.menu_button.disabled); locked fields are disabled outright, which
    SillyTavern already greys. index.js sets the body classes (applyLock()). */
-body.ss-lock :is(#character_import_button, #external_import_button, .external_import_button),
+body.ss-lock :is(#rm_button_create, #character_import_button, #external_import_button, .external_import_button),
 body.ss-lock-card #form_create :is([id="renameCharButton"], [id="dupe_button"], [id="delete_button"], #favorite_button, #world_button, .open_alternate_greetings),
 body.ss-lock-world :is(#world_popup_name_button, #world_duplicate, #world_popup_delete, #world_popup_new, #world_backfill_memos, #world_apply_current_sorting),
 body.ss-lock-world #world_popup_entries_list :is(.killSwitch, .menu_button, .drag-handle),

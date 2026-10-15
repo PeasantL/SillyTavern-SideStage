@@ -135,7 +135,7 @@ const rosterDefaults = {
     sceneRequest: 'Describe the current scene in detail.',
     /**
      * Locks what the Character Editor manages (see the Card Editor lock):
-     * card fields, import, rename, duplicate and delete, and worlds' lorebooks
+     * card fields, new cards, import, rename, duplicate and delete, and worlds' lorebooks
      * and groups. The controls stay, greyed out.
      * @type {boolean}
      */
@@ -2761,7 +2761,7 @@ const settingsHtml = `
             <div class="ss-settings-section">
                 <div class="ss-settings-heading">Card Editor</div>
                 <div class="ss-settings-toggles">
-                    <label class="checkbox_label" for="ss_lock_managed" title="Greys out what the Character Editor manages, so SillyTavern can't change it behind the editor's back: card fields, avatar, favourite and lorebook link; import, rename, duplicate and delete; renaming, duplicating and deleting a world's lorebook; deleting a world's group and adding or removing its members.">
+                    <label class="checkbox_label" for="ss_lock_managed" title="Greys out what the Character Editor manages, so SillyTavern can't change it behind the editor's back: card fields, avatar, favourite and lorebook link; new card, import, rename, duplicate and delete; renaming, duplicating and deleting a world's lorebook; deleting a world's group and adding or removing its members.">
                         <input id="ss_lock_managed" type="checkbox">
                         <span>Lock what the Card Editor manages</span>
                     </label>
@@ -3709,6 +3709,7 @@ function watchTablet() {
 const LOCKED_CARD_CONTROLS = '[id="renameCharButton"], [id="dupe_button"], [id="delete_button"], #favorite_button, #world_button, '
     + '[id="set_character_world"], #import_character_info, #replace_update, .open_alternate_greetings';
 const LOCKED_IMPORT = '#character_import_button, #external_import_button, .external_import_button';
+const LOCKED_CREATE = '#rm_button_create';
 const LOCKED_WORLD_CONTROLS = '#world_popup_name_button, #world_duplicate, #world_popup_delete, #world_popup_new, '
     + '#world_backfill_memos, #world_apply_current_sorting, #world_popup_entries_list :is(.killSwitch, .menu_button, .drag-handle)';
 /** The World Info editor's entries; a world's are read-only while locked (its fields are disabled, see lockWorldEntries()). */
@@ -3827,6 +3828,9 @@ function lockedReason(el) {
     }
     if (el.closest(LOCKED_IMPORT)) {
         return t`Import cards in the Card Editor.`;
+    }
+    if (el.closest(LOCKED_CREATE)) {
+        return t`Create cards in the Card Editor.`;
     }
     if (isEditingCard() && el.closest(LOCKED_CARD_CONTROLS)) {
         return t`This card is managed by the Card Editor; change it there.`;
