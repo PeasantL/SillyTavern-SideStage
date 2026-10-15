@@ -3707,8 +3707,14 @@ function watchTablet() {
 
 /** Card-panel controls locked while a card is being edited (not created). Some ids are on a button and a More… option both. */
 const LOCKED_CARD_CONTROLS = '[id="renameCharButton"], [id="dupe_button"], [id="delete_button"], #favorite_button, #world_button, '
-    + '[id="set_character_world"], #import_character_info, #replace_update, '
-    + '.alternate_grettings :is(.add_alternate_greeting, .delete_alternate_greeting, .move_up_alternate_greeting, .move_down_alternate_greeting)';
+    + '[id="set_character_world"], #import_character_info, #replace_update';
+/**
+ * The Alternate Greetings popup's buttons, locked like the card's. Kept apart
+ * from LOCKED_CARD_CONTROLS and without :is(): that list goes through jQuery's
+ * .filter(), whose selector engine (jQuery 3.5) throws on :is().
+ */
+const LOCKED_GREETING_CONTROLS = '.alternate_grettings .add_alternate_greeting, .alternate_grettings .delete_alternate_greeting, '
+    + '.alternate_grettings .move_up_alternate_greeting, .alternate_grettings .move_down_alternate_greeting';
 /** The Alternate Greetings popup's fields; it still opens while locked, to read them, but they are read-only (see lockAlternateGreetings()). */
 const ALTERNATE_GREETING_FIELDS = '.alternate_grettings textarea.alternate_greeting_text';
 const LOCKED_IMPORT = '#character_import_button, #external_import_button, .external_import_button';
@@ -3853,7 +3859,7 @@ function lockedReason(el) {
     if (el.closest(LOCKED_CREATE)) {
         return t`Create cards in the Card Editor.`;
     }
-    if (isEditingCard() && el.closest(LOCKED_CARD_CONTROLS)) {
+    if (isEditingCard() && el.closest(`${LOCKED_CARD_CONTROLS}, ${LOCKED_GREETING_CONTROLS}`)) {
         return t`This card is managed by the Card Editor; change it there.`;
     }
     if (isWorldInEditor() && el.closest(LOCKED_WORLD_CONTROLS)) {
