@@ -127,7 +127,7 @@ const rosterDefaults = {
     oocGhost: true,
     /**
      * What the Morality and Scene buttons ask, inside the fixed
-     * ((OOC: Pause the roleplay and respond out of character. ...)) wrapper.
+     * [OOC: Pause the roleplay and respond out of character. ...] wrapper.
      * Blank falls back to these defaults.
      * @type {string}
      */
@@ -2161,106 +2161,51 @@ async function runSpellCheck() {
 }
 
 /**
- * The OOC / Morality / Scene buttons: a real turn, not a rewrite. An
- * ((OOC: ...)) line goes into the chat as a user message the normal way, and
- * whoever is currently speaking answers it out of character — but the answer
- * is still a one-shot request like the rewrite actions, not a Generate() call,
- * so it never touches World Info, Author's Note, persona or the jailbreak: the
- * only context it gets is the chat itself.
+ * The OOC / Morality / Scene buttons send their line exactly the way a Quick
+ * Reply does: it goes into the message box and Send is clicked, so the answer
+ * is an ordinary Generate() turn — same prompt, same context, same streaming.
  */
 
-const OOC_REPLY_PROMPT = [
-    'You are {{char}}, in an ongoing roleplay chat with {{user}}. You have just',
-    'been asked an out-of-character (OOC) question, and you are answering as',
-    'yourself — the person behind the character — not staying in character for',
-    'the roleplay.',
-    '',
-    'Rules you must follow exactly:',
-    '- Answer only the OOC request, plainly and directly.',
-    '- Do not continue the roleplay scene, write the next in-character turn, or',
-    '  speak for {{user}} or anyone else.',
-    '- Wrap your whole reply in ((OOC: ...)), the same way the request was.',
-    '- No preamble, and no roleplay formatting like *asterisks* in the OOC reply.',
-].join('\n');
-
-// Room for a profile that thinks before it answers; see assistBudget.
-const OOC_MAX_TOKENS = 4096;
+// How long a turn may take before the Ghost toggle stops waiting on it.
+const OOC_TURN_TIMEOUT = 10 * 60 * 1000;
 
 /**
- * Posts an OOC line as a real user turn, then asks whoever last spoke to
- * answer it out of character. Both land in the chat log the normal way.
+ * Sends an OOC line through the message box, as Quick Reply does, and — with
+ * the Ghost toggle on — ghosts the exchange once the reply has landed.
  * @param {string} oocLine
  * @returns {Promise<void>}
  */
 async function runOocTurn(oocLine) {
-    const speakerMessageId = getLatestCharacterMessageId();
+    const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
+    const sendButton = /** @type {HTMLElement} */ (document.getElementById('send_but'));
 
-    if (speakerMessageId === -1) {
-        toastr.info(t`No character to answer yet.`);
+    if (!textarea || !sendButton) {
         return;
     }
 
-    const speaker = chat[speakerMessageId];
+    // The ask lands at the end of the chat, and whatever answers it after.
+    const askMessageId = chat.length;
 
-    await sendMessageAsUser(oocLine, extractMessageBias(oocLine));
-    const askMessageId = chat.length - 1;
+    textarea.value = substituteParams(oocLine);
+    textarea.focus();
+    sendButton.click();
 
-    const systemPrompt = substituteParams(OOC_REPLY_PROMPT, {
-        name1Override: name1,
-        name2Override: speaker.name,
-    });
+    if (!getSettings().oocGhost) {
+        return;
+    }
 
-    // The reply's bubble goes up empty and streams in, the same as a real
-    // character turn — so it needs to exist in `chat` before the request even
-    // starts, and comes back out again if the request fails or returns
-    // nothing, since nothing has been announced to other extensions yet.
-    const reply = {
-        is_user: false,
-        is_system: false,
-        name: speaker.name,
-        send_date: getMessageTimeStamp(),
-        original_avatar: speaker.original_avatar,
-        force_avatar: speaker.force_avatar,
-        extra: { gen_id: Date.now() * Math.random() * 1000000 },
-        mes: '',
-    };
-
-    chat.push(reply);
-    const replyMessageId = chat.length - 1;
-    addOneMessage(reply);
-
-    const { onProgress } = streamIntoMessage(replyMessageId);
-
+    // With the Ghost toggle on, the whole exchange is ghosted — the same
+    // "Exclude message from prompts" state the mes_hide button sets — so it
+    // stays visible but never bleeds into a later reply.
     try {
-        const result = await runAssistRequest([
-            { role: 'system', content: systemPrompt },
-            ...buildChatMessages(askMessageId),
-        ], OOC_MAX_TOKENS, onProgress);
+        await waitUntilCondition(() => isGenerating() || chat.length > askMessageId, 10000, 50);
+        await waitUntilCondition(() => !isGenerating(), OOC_TURN_TIMEOUT, 200);
+    } catch {
+        return;
+    }
 
-        if (!result?.trim()) {
-            throw new Error(t`The model returned nothing.`);
-        }
-
-        await replaceMessageText(replyMessageId, result);
-        await eventSource.emit(event_types.MESSAGE_RECEIVED, replyMessageId, 'normal');
-        await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, replyMessageId, 'normal');
-
-        // With the Ghost toggle on, both halves of the aside are ghosted — the
-        // same "Exclude message from prompts" state the mes_hide button sets —
-        // so the exchange stays visible but never bleeds into a later
-        // Generate() or the next OOC request's own history.
-        if (getSettings().oocGhost) {
-            await hideChatMessageRange(askMessageId, replyMessageId, false);
-        }
-    } catch (error) {
-        chat.splice(replyMessageId, 1);
-        $(`#chat .mes[mesid="${replyMessageId}"]`).remove();
-        // The ask still happened and still gets ghosted on its own; only the
-        // reply that never arrived is rolled back.
-        if (getSettings().oocGhost) {
-            await hideChatMessageRange(askMessageId, askMessageId, false);
-        }
-        throw error;
+    if (chat.length > askMessageId) {
+        await hideChatMessageRange(askMessageId, chat.length - 1, false);
     }
 }
 
@@ -2277,10 +2222,7 @@ async function runOOC() {
         return;
     }
 
-    textarea.value = '';
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-
-    await runOocTurn(`((OOC: Pause the roleplay and respond out of character: ${input}))`);
+    await runOocTurn(`[OOC: Pause the roleplay and respond out of character: ${input}]`);
 }
 
 /**
@@ -2292,7 +2234,7 @@ async function runOOC() {
  */
 function buildFixedOocLine(key) {
     const request = String(getSettings()[key] ?? '').trim() || rosterDefaults[key];
-    return `((OOC: Pause the roleplay and respond out of character. ${request}))`;
+    return `[OOC: Pause the roleplay and respond out of character. ${request}]`;
 }
 
 /** Asks about the evil of the current scene, out of character. */
@@ -2811,7 +2753,7 @@ const settingsHtml = `
                 <label for="ss_scene_request">Scene asks</label>
                 <textarea id="ss_scene_request" class="text_pole textarea_compact" rows="2"
                           placeholder="Describe the current scene in detail."></textarea>
-                <small class="ss-settings-hint">Each is posted as <code>((OOC: Pause the roleplay and respond out of character. …))</code> and answered by whoever spoke last. Blank restores the default.</small>
+                <small class="ss-settings-hint">Each is sent as <code>[OOC: Pause the roleplay and respond out of character. …]</code> through the message box, like a Quick Reply. Blank restores the default.</small>
             </div>
 
             <div class="ss-settings-divider"></div>

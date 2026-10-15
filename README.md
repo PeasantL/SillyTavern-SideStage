@@ -75,8 +75,9 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   and clear grammar errors; your word choice, tone and line breaks are left
   alone, as are dialect, fragments, invented names and roleplay formatting.
   Nothing is sent to the chat, and `{{macros}}` come back intact.
-- **OOC**: Posts what you have typed as an out-of-character question and
-  answers it in the voice of whoever spoke last.
+- **OOC**: Wraps what you have typed as `[OOC: ...]` and sends it the way a
+  Quick Reply does — into the message box, then Send — so the answer is an
+  ordinary reply with the usual prompt, context and streaming.
 - **Morality**: The same aside, asking what is evil about the scene as it
   stands. Nothing to type; the wording is editable in the settings drawer.
 - **Scene**: The same aside, asking for a description of the scene as it
@@ -85,10 +86,10 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   of an aside are ghosted once they land — ST's own *Exclude message from
   prompts* — so the exchange stays on screen but never reaches a later reply.
   Turn it off to let the asides count as ordinary chat.
-- **Which AI**: The connection profile selected in SillyTavern's Connection
-  Manager, or the active connection when none is selected.
-- **How much chat goes with an aside**: The whole chat, which is what an answer
-  about the scene needs.
+- **Which AI**: For the rewrites and spell check, the connection profile
+  selected in SillyTavern's Connection Manager, or the active connection when
+  none is selected. The asides are normal sends, so they use the active
+  connection.
 - **Watch it arrive**: On a connection profile, a reply streams in as it is
   written — into the message for the rewrites, into the message box for the
   spell check. Nothing is saved until the whole reply is in, and a result that
