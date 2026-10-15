@@ -908,7 +908,8 @@ body.ss-tablet:not(.waifuMode):has(> .zoomed_avatar) .ss-strip :is(.gr-body, .gr
    buttons (.menu_button.disabled); locked fields are disabled outright, which
    SillyTavern already greys. index.js sets the body classes (applyLock()). */
 body.ss-lock :is(#rm_button_create, #character_import_button, #external_import_button, .external_import_button),
-body.ss-lock-card #form_create :is([id="renameCharButton"], [id="dupe_button"], [id="delete_button"], #favorite_button, #world_button, .open_alternate_greetings),
+body.ss-lock-card #form_create :is([id="renameCharButton"], [id="dupe_button"], [id="delete_button"], #favorite_button, #world_button),
+body.ss-lock-card .alternate_grettings :is(.add_alternate_greeting, .delete_alternate_greeting, .move_up_alternate_greeting, .move_down_alternate_greeting),
 body.ss-lock-world :is(#world_popup_name_button, #world_duplicate, #world_popup_delete, #world_popup_new, #world_backfill_memos, #world_apply_current_sorting),
 body.ss-lock-world #world_popup_entries_list :is(.killSwitch, .menu_button, .drag-handle),
 body.ss-lock-group :is(#rm_group_delete, #rm_group_members [data-action="remove"], #rm_group_add_members [data-action="add"]) {

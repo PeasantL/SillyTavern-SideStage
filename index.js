@@ -3707,7 +3707,10 @@ function watchTablet() {
 
 /** Card-panel controls locked while a card is being edited (not created). Some ids are on a button and a More… option both. */
 const LOCKED_CARD_CONTROLS = '[id="renameCharButton"], [id="dupe_button"], [id="delete_button"], #favorite_button, #world_button, '
-    + '[id="set_character_world"], #import_character_info, #replace_update, .open_alternate_greetings';
+    + '[id="set_character_world"], #import_character_info, #replace_update, '
+    + '.alternate_grettings :is(.add_alternate_greeting, .delete_alternate_greeting, .move_up_alternate_greeting, .move_down_alternate_greeting)';
+/** The Alternate Greetings popup's fields; it still opens while locked, to read them, but they are read-only (see lockAlternateGreetings()). */
+const ALTERNATE_GREETING_FIELDS = '.alternate_grettings textarea.alternate_greeting_text';
 const LOCKED_IMPORT = '#character_import_button, #external_import_button, .external_import_button';
 const LOCKED_CREATE = '#rm_button_create';
 const LOCKED_WORLD_CONTROLS = '#world_popup_name_button, #world_duplicate, #world_popup_delete, #world_popup_new, '
@@ -3801,6 +3804,24 @@ function lockWorldEntries() {
 function isLockedField(id) {
     const field = id ? document.getElementById(id) : null;
     return isLocked() && field?.dataset.ssLocked !== undefined;
+}
+
+/**
+ * Disables the fields of the Alternate Greetings popup SillyTavern just opened
+ * for a card being edited. They are marked like the card form's, so their ⛶
+ * expanded editors are read-only too (see lockExpandedEditor()).
+ */
+function lockAlternateGreetings() {
+    if (!isLocked() || !isEditingCard()) {
+        return;
+    }
+
+    for (const el of document.querySelectorAll(ALTERNATE_GREETING_FIELDS)) {
+        if (el instanceof HTMLTextAreaElement && !el.disabled) {
+            el.disabled = true;
+            el.dataset.ssLocked = '';
+        }
+    }
 }
 
 /** Makes the expanded editor of a locked field read-only and greys it like the field. */
@@ -3907,6 +3928,14 @@ function watchLock() {
             e.preventDefault();
             e.stopImmediatePropagation();
             toastLocked(reason);
+        }
+    }, true);
+
+    // The Alternate Greetings popup opens for reading; its fields are drawn
+    // by SillyTavern's handler, which runs after this one.
+    document.addEventListener('click', (e) => {
+        if (e.target instanceof Element && e.target.closest('.open_alternate_greetings')) {
+            setTimeout(lockAlternateGreetings);
         }
     }, true);
 
