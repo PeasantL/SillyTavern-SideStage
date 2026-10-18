@@ -920,10 +920,19 @@ body.ss-lock-group :is(#rm_group_delete, #rm_group_members [data-action="remove"
 
 /* Not pointer-events: none on the buttons themselves, so the not-allowed cursor shows; index.js stops the click. */
 
-/* The expanded (⛶) editor of a locked field, read-only: greyed like the field. */
+/* Locked text fields keep their text readable: SillyTavern dims disabled
+   fields as a whole (filter: brightness(0.5)), text included, and Safari fades
+   their text too. A dashed border says they are locked instead. Checkboxes and
+   other toggles stay greyed. The expanded (⛶) editor of a locked field,
+   read-only, looks the same. */
+:is(textarea, select, input:not([type="checkbox"], [type="radio"], [type="range"]))[data-ss-locked],
 .maximized_textarea.ss-locked-field {
     cursor: not-allowed;
-    filter: brightness(0.5);
+    filter: none;
+    opacity: 1;
+    color: var(--SmartThemeBodyColor);
+    -webkit-text-fill-color: var(--SmartThemeBodyColor);
+    border-style: dashed;
 }
 
 /* The notice atop the World Info editor, only while it has a world open. */

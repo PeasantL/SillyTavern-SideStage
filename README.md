@@ -108,7 +108,7 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 
 ### Card Editor lock
 
-One setting, on by default: **Lock what the Card Editor manages**. The [Character Card Editor](https://github.com/PeasantL/character-editor) owns cards, worlds' lorebooks and their groups, so with the lock on SillyTavern can't change them behind its back. The controls stay where they are, greyed out like SillyTavern's own unavailable settings, and say where to go instead when clicked.
+One setting, on by default: **Lock what the Card Editor manages**. The [Character Card Editor](https://github.com/PeasantL/character-editor) owns cards, worlds' lorebooks and their groups, so with the lock on SillyTavern can't change them behind its back. The controls stay where they are, greyed out like SillyTavern's own unavailable settings, and say where to go instead when clicked. Locked text fields keep their text readable, with a dashed border instead of the grey.
 
 - **Card fields**: Name, description, greetings, alternate greetings, tags, avatar, favourite, talkativeness and the advanced definitions are read-only while a card is open, in the panel and in its ⛶ expanded editor (creating a new card is untouched). The *Alternate Greetings* popup still opens so you can read them, but its fields are read-only and its add, delete and move buttons are locked.
 - **Card actions**: *Create New Character*, import (button, external URL, files or links dropped on the page), rename, duplicate, delete, *Link to World Info*, *Import Card Lore* and *Replace / Update*, and the `/rename-char`, `/char-delete`, `/char-duplicate` and `/char-update` commands.
