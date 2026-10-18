@@ -111,7 +111,6 @@ let focusedAvatar = null;
  * @typedef {object} Stage
  * @property {string} note Author's Note the footer toggle fills the chat with
  * @property {Layout[]} layouts Scenes that can be opened with this cast
- * @property {string} activeLayoutId Id of the selected layout, or '' for none
  * @property {string} [group] Id of the world's group
  * @property {number} [rev] Raised by every save, by SideStage or the Character Editor, so a save can tell the
  *     file changed since it was read (see mergeStage())
@@ -134,12 +133,19 @@ const rosterDefaults = {
     moralityRequest: 'Describe the evil of the current scene in detail.',
     sceneRequest: 'Describe the current scene in detail.',
     /**
-     * Locks what the Character Editor manages (see the Card Editor lock):
+     * Locks what the Character Editor manages (see the Character Editor lock):
      * card fields, new cards, import, rename, duplicate and delete, and worlds' lorebooks
      * and groups. The controls stay, greyed out.
      * @type {boolean}
      */
     lockManaged: true,
+    /**
+     * The Character Editor's address as this browser opens it (e.g.
+     * https://host:1019/). Set, the lock's messages, the World Info notice, the
+     * layout picker and the drawer link into it; blank, there are no links.
+     * @type {string}
+     */
+    editorUrl: '',
 };
 
 /**
@@ -161,9 +167,9 @@ function normalizeStage(stage) {
     if (!Array.isArray(stage.layouts)) {
         stage.layouts = [];
     }
-    if (typeof stage.activeLayoutId !== 'string') {
-        stage.activeLayoutId = '';
-    }
+    // Which layout is selected is the group's (see getActiveLayout()); stages
+    // saved before kept it here, and the next save drops it.
+    delete stage.activeLayoutId;
 
     for (const layout of stage.layouts) {
         if (typeof layout.note !== 'string') {
@@ -178,12 +184,6 @@ function normalizeStage(stage) {
         if (!layout.cards || typeof layout.cards !== 'object') {
             layout.cards = {};
         }
-    }
-
-    // A layout deleted from another tab, or settings rolled back, must not
-    // leave the stage pointing at nothing.
-    if (!stage.layouts.some(x => x.id === stage.activeLayoutId)) {
-        stage.activeLayoutId = '';
     }
 
     return stage;
@@ -222,6 +222,49 @@ function getSettings() {
     return settings;
 }
 
+/** Name of the browser tab links into the Character Editor open in, so they reuse one tab. */
+const EDITOR_WINDOW = 'character-editor';
+
+/**
+ * A link into the Character Editor, or '' when its address isn't set. The
+ * editor reads what to open from the hash: `card` (a card file), or `world`
+ * and maybe `layout` (an id).
+ * @param {{card?: string, world?: string, layout?: string}} [to] Nothing opens the editor as it is
+ * @returns {string}
+ */
+function editorLink(to = {}) {
+    const base = String(getSettings().editorUrl ?? '').trim();
+
+    if (!base) {
+        return '';
+    }
+
+    try {
+        const url = new URL(base, location.href);
+        url.hash = new URLSearchParams(Object.entries(to).filter(([, value]) => value)).toString();
+        return url.href;
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * Opens the Character Editor on a card, world or layout (see editorLink()).
+ * @param {{card?: string, world?: string, layout?: string}} [to]
+ */
+function openInEditor(to = {}) {
+    const href = editorLink(to);
+
+    if (href) {
+        window.open(href, EDITOR_WINDOW);
+    }
+}
+
+/** Shows the links into the Character Editor only while its address is set. */
+function applyEditorLinks() {
+    document.body.classList.toggle('ss-editor-linked', !!editorLink());
+}
+
 /**
  * The stage of one group, kept in its world's lorebook.
  * @param {string} [groupId]
@@ -230,18 +273,6 @@ function getSettings() {
 function getStage(groupId) {
     const world = groupId ? getGroupWorld(groupId) : '';
     return world ? worldStages.get(world) ?? null : null;
-}
-
-/**
- * Saves a group's stage into its world's lorebook (shortly).
- * @param {string} groupId
- */
-function saveStage(groupId) {
-    const world = getGroupWorld(groupId);
-
-    if (world) {
-        saveWorldStageDebounced(world);
-    }
 }
 
 /** @returns {Stage|null} The stage of the open group chat. */
@@ -276,12 +307,28 @@ function getSettingsStage() {
     return getStage(getSettingsGroupId());
 }
 
+/** Field of a world's group (in ST's group file) naming its selected layout. */
+const GROUP_LAYOUT_KEY = 'sidestage_layout';
+
 /**
- * @param {Stage|null} stage
- * @returns {Layout|null} The stage's selected layout, or null when none is.
+ * @param {object|null|undefined} group
+ * @returns {string} Id of the layout selected in the panel footer for this group, or '' for none.
  */
-function getActiveLayout(stage) {
-    return stage?.layouts.find(x => x.id === stage.activeLayoutId) ?? null;
+function getSelectedLayoutId(group) {
+    return String(group?.[GROUP_LAYOUT_KEY] ?? '');
+}
+
+/**
+ * The group's selected layout. Picking one is a choice made in SillyTavern, so
+ * it is kept in the group's file (ST saves the whole group object) rather than
+ * in the world's lorebook, which then changes only when layouts are edited.
+ * A selected layout deleted since (in the Character Editor) counts as none.
+ * @param {string} [groupId]
+ * @returns {Layout|null}
+ */
+function getActiveLayout(groupId) {
+    const id = getSelectedLayoutId(groups.find(x => x.id === groupId));
+    return (id && getStage(groupId)?.layouts.find(x => x.id === id)) || null;
 }
 
 /**
@@ -341,7 +388,7 @@ function getTurnText(entry) {
  * SideStage never deletes a group (that would delete its chats).
  *
  * Which group is the world's, and the group's stage, live in the lorebook under
- * extensions.sidestage ({group, note, activeLayoutId, layouts}), so they travel
+ * extensions.sidestage ({group, note, layouts, rev}), so they travel
  * with the world and survive the editor renaming it; the group file only ever
  * holds ST's own fields.
  *
@@ -457,7 +504,7 @@ function mergeKeys(local, base, file, nested = {}) {
  * Brings a world's stage up to the version in its file, keeping what changed
  * here since it was last read (`base`) and taking everything else from the
  * file, so layouts edited in the Character Editor (or another tab) meanwhile
- * are kept. Changes are kept per field: the group's note and selected layout,
+ * are kept. Changes are kept per field: the group's note,
  * a layout's name, note, narrator and order, and each card's entry in it.
  * Layouts added here are added; a layout deleted on either side stays deleted.
  * Done in place, as the drawer and panel hold on to the stage. The Character
@@ -471,10 +518,8 @@ function mergeStage(local, base, file) {
     const baseLayouts = new Map(base.layouts.map(x => [x.id, x]));
     const localLayouts = new Map(local.layouts.map(x => [x.id, x]));
 
-    for (const key of ['note', 'activeLayoutId']) {
-        if (local[key] !== base[key]) {
-            merged[key] = local[key];
-        }
+    if (local.note !== base.note) {
+        merged.note = local.note;
     }
 
     merged.layouts = merged.layouts
@@ -554,8 +599,9 @@ async function writeWorldStage(world) {
  * edited in the Character Editor) since SideStage read it. A save waiting to
  * go is written first, which merges the two.
  * @param {string} world
+ * @param {object} [given] The stage in the file, when the caller has just read it
  */
-async function pullWorldStage(world) {
+async function pullWorldStage(world, given) {
     if (pendingWorldSaves.has(world)) {
         await flushWorldSave(world);
         return;
@@ -563,8 +609,7 @@ async function pullWorldStage(world) {
 
     const stage = worldStages.get(world);
     const base = worldBases.get(world);
-    const data = stage && base ? await fetchWorld(world) : null;
-    const file = data?.extensions?.[WORLD_KEY];
+    const file = !stage || !base ? null : given ?? (await fetchWorld(world))?.extensions?.[WORLD_KEY];
 
     if (!file || typeof file !== 'object' || stageRev(file) === stageRev(base) || String(file.group ?? '') !== stage.group) {
         return;
@@ -608,6 +653,29 @@ async function flushWorldSaves() {
 }
 
 /**
+ * Every lorebook's `extensions`, by file name, from SillyTavern's World Info
+ * list: one request, without the entries, and all that finding the worlds and
+ * their stages needs. Entries are read only before a write (writeWorldStage()).
+ * @returns {Promise<Map<string, object>>}
+ */
+async function fetchLorebookExtensions() {
+    const response = await fetch('/api/worldinfo/list', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+        throw new Error(t`SillyTavern could not list the lorebooks.`);
+    }
+
+    const list = await response.json();
+    return new Map((Array.isArray(list) ? list : [])
+        .filter(x => x && typeof x.file_id === 'string')
+        .map(x => [x.file_id, x.extensions && typeof x.extensions === 'object' ? x.extensions : {}]));
+}
+
+/**
  * Works out which group each world is tied to, from the lorebooks the cards
  * link. Only those can be worlds with a cast; a world nobody links has no
  * cast and so no group to fill.
@@ -616,6 +684,7 @@ async function resolveWorlds() {
     await flushWorldSaves();
 
     const names = [...new Set(characters.map(getCharacterWorld).filter(Boolean))];
+    const extensions = await fetchLorebookExtensions();
     const stages = new Map();
     const lorebooks = new Map();
     const owners = new Map();
@@ -623,13 +692,7 @@ async function resolveWorlds() {
     const bases = new Map();
 
     for (const name of names) {
-        let data = null;
-
-        try {
-            data = await fetchWorld(name);
-        } catch (error) {
-            console.warn('[SideStage] Could not read the lorebook', name, error);
-        }
+        const data = extensions.has(name) ? { extensions: extensions.get(name) } : null;
 
         if (!isWorldLorebook(data)) {
             continue;
@@ -645,6 +708,7 @@ async function resolveWorlds() {
         recorded.set(name, groupId);
 
         if (owned) {
+            await takeSelectedLayout(groups.find(x => x.id === groupId), stage);
             owners.set(groupId, name);
             stages.set(name, normalizeStage(stage));
             bases.set(name, structuredClone(stage));
@@ -666,6 +730,24 @@ async function resolveWorlds() {
     }
 
     worldsResolved = true;
+}
+
+/**
+ * Moves the selected layout of a stage saved before it was the group's
+ * (`activeLayoutId` in the lorebook) onto the group, once. The lorebook loses
+ * it on its next save (normalizeStage()).
+ * @param {object|undefined} group
+ * @param {object} stage The stage as read from the lorebook
+ */
+async function takeSelectedLayout(group, stage) {
+    const id = typeof stage.activeLayoutId === 'string' ? stage.activeLayoutId : '';
+
+    if (!group || GROUP_LAYOUT_KEY in group || !id || !Array.isArray(stage.layouts) || !stage.layouts.some(x => x?.id === id)) {
+        return;
+    }
+
+    group[GROUP_LAYOUT_KEY] = id;
+    await editGroup(group.id, true, false);
 }
 
 /**
@@ -697,7 +779,7 @@ async function syncWorldGroup(groupId) {
     const kept = members.filter(avatar => cast.includes(avatar));
     const joined = cast.filter(avatar => !kept.includes(avatar));
     const nextMembers = [...kept, ...joined];
-    const layout = getActiveLayout(getStage(groupId));
+    const layout = getActiveLayout(groupId);
     const nextMuted = [
         ...muted.filter(avatar => kept.includes(avatar)),
         ...joined.filter(avatar => !(layout && getLayoutEntry(layout, avatar).active)),
@@ -878,11 +960,11 @@ async function refreshCachedLorebooks() {
         return;
     }
 
-    for (const name of [...cache.keys()]) {
+    await Promise.all([...cache.keys()].map(async (name) => {
         const data = await fetchWorld(name).catch(() => null);
 
         if (!data || !cache.has(name) || JSON.stringify(data) === JSON.stringify(cache.get(name))) {
-            continue;
+            return;
         }
 
         cache.set(name, data);
@@ -890,26 +972,106 @@ async function refreshCachedLorebooks() {
         if (typeof worldInfo.reloadEditor === 'function') {
             worldInfo.reloadEditor(name);
         }
-    }
+    }));
 }
 
 /**
- * Back in the SillyTavern tab, maybe from the Character Editor: takes the
- * lorebooks and the open group's layouts changed there meanwhile. A World Info
- * edit made just before leaving the tab has been saved by then (ST saves it
- * within a second), so its file already has it.
+ * The character list as SillyTavern's server has it now (shallow: each card's
+ * name and linked lorebook are there), to compare with the one in memory.
+ * @returns {Promise<object[]>}
  */
-function onBackToTab() {
-    if (document.visibilityState !== 'visible' || !worldsResolved) {
+async function fetchCharacterList() {
+    const response = await fetch('/api/characters/all', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+        throw new Error(t`SillyTavern could not list the characters.`);
+    }
+
+    const list = await response.json();
+    return Array.isArray(list) ? list : [];
+}
+
+/**
+ * What the world groups follow in a character list: each card's file, name
+ * and linked lorebook (its world).
+ * @param {object[]} list
+ * @returns {string}
+ */
+function castSignature(list) {
+    return list
+        .filter(x => x?.avatar)
+        .map(x => [x.avatar, x.name ?? '', getCharacterWorld(x)].join('\u0000'))
+        .sort()
+        .join('\u0001');
+}
+
+/**
+ * Takes what the Character Editor changed since SillyTavern last looked, with
+ * two requests: the character list and the lorebooks' extensions. Cards that
+ * joined, left or were renamed (or a world renamed, which relinks its cards)
+ * reload the characters and sync the groups, as ⟳ does; a lorebook made a
+ * world, or no longer one, re-reads the worlds; otherwise only the worlds whose
+ * layouts were saved elsewhere are merged in.
+ */
+async function catchUpWithEditor() {
+    const [listed, extensions] = await Promise.all([fetchCharacterList(), fetchLorebookExtensions()]);
+
+    if (castSignature(listed) !== castSignature(characters)) {
+        await refreshWorlds({ reload: true });
         return;
     }
 
-    refreshCachedLorebooks().catch(error => console.error('[SideStage] Could not refresh the lorebooks', error));
-    const world = getGroupWorld(selected_group);
+    const linked = [...new Set(characters.map(getCharacterWorld).filter(Boolean))];
+    const worlds = linked.filter(name => isWorldLorebook({ extensions: extensions.get(name) }));
 
-    if (world) {
-        pullWorldStage(world).catch(error => console.error('[SideStage] Could not read the world\'s layouts', error));
+    if (worlds.length !== worldLorebooks.size || worlds.some(name => !worldLorebooks.has(name))) {
+        await refreshWorlds();
+        return;
     }
+
+    for (const [world, base] of worldBases) {
+        const file = extensions.get(world)?.[WORLD_KEY];
+
+        if (file && typeof file === 'object' && stageRev(file) !== stageRev(base)) {
+            await pullWorldStage(world, file);
+        }
+    }
+}
+
+/** Shortest wait between two catch-ups, as coming back fires both focus and visibilitychange. */
+const CATCH_UP_GAP = 2000;
+let catchingUp = null;
+let caughtUpAt = 0;
+
+/**
+ * Back in the SillyTavern tab or window, maybe from the Character Editor: takes
+ * the lorebooks, cards, worlds and layouts changed there meanwhile, so the
+ * world groups are in step without ⟳ (catchUpWithEditor()). A World Info edit
+ * made just before leaving the tab has been saved by then (ST saves it within
+ * a second), so its file already has it. Left for the next return while a
+ * reply is being generated, as reloading the characters would wait for it.
+ */
+function onBackToTab() {
+    if (document.visibilityState !== 'visible' || !worldsResolved || catchingUp || refreshingWorlds
+        || isGenerating() || Date.now() - caughtUpAt < CATCH_UP_GAP) {
+        return;
+    }
+
+    catchingUp = (async () => {
+        try {
+            await refreshCachedLorebooks();
+            await catchUpWithEditor();
+        } catch (error) {
+            console.error('[SideStage] Could not catch up with changes made outside SillyTavern', error);
+        } finally {
+            catchingUp = null;
+            caughtUpAt = Date.now();
+        }
+    })();
 }
 
 /**
@@ -1035,7 +1197,7 @@ async function setMuted(avatar, shouldMute) {
  */
 async function applyLayoutMutes() {
     const group = getCurrentGroup();
-    const layout = getActiveLayout(getActiveStage());
+    const layout = getActiveLayout(getCurrentGroup()?.id);
 
     if (!group || !Array.isArray(group.members) || !layout) {
         return false;
@@ -1112,7 +1274,7 @@ function sideStageDropsGreeting(args) {
         return false;
     }
 
-    if (isLayoutUsable(group, getActiveLayout(getActiveStage()))) {
+    if (isLayoutUsable(group, getActiveLayout(getCurrentGroup()?.id))) {
         return true;
     }
 
@@ -1221,7 +1383,7 @@ function buildNarratorMessage(layout) {
  */
 async function openSceneFromLayout() {
     const group = getCurrentGroup();
-    const layout = getActiveLayout(getActiveStage());
+    const layout = getActiveLayout(getCurrentGroup()?.id);
 
     if (!isLayoutUsable(group, layout)) {
         return;
@@ -1368,8 +1530,7 @@ function setChatAuthorsNote(text) {
  * @returns {string}
  */
 function getEffectiveNote() {
-    const stage = getActiveStage();
-    return getActiveLayout(stage)?.note || stage?.note || '';
+    return getActiveLayout(getCurrentGroup()?.id)?.note || getActiveStage()?.note || '';
 }
 
 /**
@@ -1396,7 +1557,7 @@ function setNoteApplied(shouldApply) {
     const note = getEffectiveNote();
 
     if (shouldApply && !note) {
-        toastr.info(t`This group has no Author's Note. Set one in Extensions → SideStage.`);
+        toastr.info(t`This group has no Author's Note. Write one in the Character Editor's World section.`);
         refreshPanel();
         return;
     }
@@ -2549,19 +2710,21 @@ function makeCardRow(avatar) {
  * @param {string} id
  */
 async function setActiveLayout(id) {
-    const stage = getActiveStage();
+    const group = getCurrentGroup();
 
-    if (!stage) {
+    if (!group || !getActiveStage()) {
         return;
     }
 
-    stage.activeLayoutId = String(id);
-    saveStage(getCurrentGroup().id);
+    group[GROUP_LAYOUT_KEY] = String(id);
     // The new layout may override the group's note, or stop overriding it.
     syncNoteToChat();
 
     try {
-        await applyLayoutMutes();
+        // Applying the mutes saves the group; when they are already right, save it for the choice alone.
+        if (!(await applyLayoutMutes())) {
+            await editGroup(group.id, true, false);
+        }
     } catch (error) {
         console.error('[SideStage] Failed to apply the layout', error);
         toastr.error(error?.message || t`Unknown error`, t`Failed to apply the layout`);
@@ -2605,8 +2768,9 @@ function refreshLayoutPicker() {
         }
     }
 
-    picker.value = stage?.activeLayoutId ?? '';
+    picker.value = getActiveLayout(getCurrentGroup()?.id)?.id ?? '';
     picker.disabled = !stage;
+    $('#groupRosterLayoutEdit').toggleClass('ss-no-stage', !stage);
     picker.title = stage || !getCurrentGroup() ? '' : t`Layouts are for worlds' groups`;
 }
 
@@ -2686,6 +2850,8 @@ function openPanel() {
                 </label>
                 <select id="groupRosterLayoutPicker" class="gr-footer-select"
                         title="${t`Greeting layout used when this group starts a new chat`}"></select>
+                <div id="groupRosterLayoutEdit" class="gr-footer-btn ss-editor-link fa-solid fa-pen-to-square fa-fw interactable" tabindex="0"
+                     title="${t`Edit the layouts in the Character Editor`}"></div>
             </div>
         </div>`;
 
@@ -2702,6 +2868,19 @@ function openPanel() {
 
     $win.find('#groupRosterNoteToggle input').on('change', function () {
         setNoteApplied(this.checked);
+    });
+
+    $win.find('#groupRosterLayoutEdit').on('click keydown', function (e) {
+        if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') {
+            return;
+        }
+        e.preventDefault();
+        const group = getCurrentGroup();
+        const world = group ? getGroupWorld(group.id) : '';
+
+        if (world) {
+            openInEditor({ world, layout: getActiveLayout(group.id)?.id ?? '' });
+        }
     });
 
     $win.find('#groupRosterLayoutPicker').on('change', function () {
@@ -2738,8 +2917,14 @@ const settingsHtml = `
                     </div>
                 </div>
                 <label for="gr_roster_note">Author's Note for this group</label>
-                <textarea id="gr_roster_note" class="text_pole textarea_compact" rows="3"
-                          placeholder="Filled into this chat's Author's Note when the panel toggle is on"></textarea>
+                <textarea id="gr_roster_note" class="text_pole textarea_compact ss-readonly" rows="3" readonly
+                          placeholder="None yet. Filled into this chat's Author's Note when the panel toggle is on"></textarea>
+                <div class="flex-container alignItemsCenter">
+                    <small class="ss-settings-hint flex1">The note and the layouts are written in the Character Editor's World section.</small>
+                    <div id="gr_world_open" class="menu_button menu_button_icon interactable ss-editor-link" title="Open this world in the Character Editor">
+                        <i class="fa-solid fa-pen-to-square fa-fw"></i>
+                    </div>
+                </div>
             </div>
 
             <div class="ss-settings-divider"></div>
@@ -2759,11 +2944,14 @@ const settingsHtml = `
             <div class="ss-settings-divider"></div>
 
             <div class="ss-settings-section">
-                <div class="ss-settings-heading">Card Editor</div>
+                <div class="ss-settings-heading">Character Editor</div>
+                <label for="ss_editor_url">Address</label>
+                <input id="ss_editor_url" class="text_pole" type="url" placeholder="https://host:1019/">
+                <small class="ss-settings-hint">The Character Editor as this browser opens it. With it set, locked controls, the World Info notice and the layout picker link to it; blank, they don't.</small>
                 <div class="ss-settings-toggles">
                     <label class="checkbox_label" for="ss_lock_managed" title="Greys out what the Character Editor manages, so SillyTavern can't change it behind the editor's back: card fields, avatar, favourite and lorebook link; new card, import, rename, duplicate and delete; renaming, duplicating and deleting a world's lorebook; deleting a world's group and adding or removing its members.">
                         <input id="ss_lock_managed" type="checkbox">
-                        <span>Lock what the Card Editor manages</span>
+                        <span>Lock what the Character Editor manages</span>
                     </label>
                 </div>
                 <small class="ss-settings-hint">Saves SillyTavern still makes (which chat a card last used) only write that, never a whole card over the editor's changes.</small>
@@ -2836,6 +3024,7 @@ function renderSettings() {
     renderGroupSelect();
     renderWorldRow();
     $('#gr_roster_note').val(getSettingsStage()?.note ?? '').prop('disabled', !getSettingsStage());
+    $('#ss_editor_url').val(getSettings().editorUrl ?? '');
     $('#ss_morality_request').val(getSettings().moralityRequest ?? '');
     $('#ss_scene_request').val(getSettings().sceneRequest ?? '');
 }
@@ -2874,19 +3063,15 @@ function addSettings() {
         }
     });
 
-    $('#gr_roster_note').on('input', function () {
-        const stage = getSettingsStage();
+    $('#gr_world_open').on('click', () => {
+        const world = getGroupWorld(getSettingsGroupId());
+        openInEditor(world ? { world } : {});
+    });
 
-        if (!stage) {
-            return;
-        }
-
-        stage.note = String($(this).val());
-        saveStage(getSettingsGroupId());
-        // The chat is holding this text while the toggle is on, and the toggle
-        // greys out for a group with no note at all.
-        syncNoteToChat();
-        refreshPanel();
+    $('#ss_editor_url').on('input', function () {
+        getSettings().editorUrl = String($(this).val()).trim();
+        saveSettingsDebounced();
+        applyEditorLinks();
     });
 
     // Characters may still be loading when the drawer is built, so repaint the
@@ -3692,7 +3877,31 @@ function watchTablet() {
     apply();
 }
 
-// ═════════════════════ Card Editor lock ═════════════════════
+// The status bar of SillyTavern as a home-screen web app: iPadOS paints it
+// from <meta name="theme-color">, which SillyTavern sets to the theme's Blur
+// Tint on every theme load (applyThemeColor('blurTint') in power-user.js), so
+// it came out in the tint rather than black. Held at black here, only in the
+// web app (a browser tab keeps SillyTavern's own colour). The meta's first
+// value and the bar's style (`black`) are in index.html, read before any
+// script runs, so those stay with whoever serves SillyTavern.
+const STATUS_BAR_COLOR = '#000000';
+
+function pinStatusBar() {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (!standalone || !meta) {
+        return;
+    }
+    const pin = () => {
+        if (meta.getAttribute('content') !== STATUS_BAR_COLOR) {
+            meta.setAttribute('content', STATUS_BAR_COLOR);
+        }
+    };
+    new MutationObserver(pin).observe(meta, { attributes: true, attributeFilter: ['content'] });
+    pin();
+}
+
+// ═══════════════════ Character Editor lock ═══════════════════
 
 /*
  * The Character Editor owns cards, worlds' lorebooks and their groups: it
@@ -3741,7 +3950,7 @@ function isEditingCard() {
 
 /** @returns {boolean} Whether the World Info editor has a world's lorebook open. */
 function isWorldInEditor() {
-    const name = $('#world_editor_select option:selected').text();
+    const name = getWorldInEditor();
     return !!name && worldLorebooks.has(name);
 }
 
@@ -3844,35 +4053,60 @@ function lockExpandedEditor(id) {
     }
 }
 
+/** @returns {string} The card file the card panel has open, or ''. */
+function getOpenCardAvatar() {
+    return String(characters[getSTContext().characterId]?.avatar ?? '');
+}
+
+/** @returns {string} The lorebook the World Info editor has open, or ''. */
+function getWorldInEditor() {
+    return $('#world_editor_select option:selected').text();
+}
+
 /**
- * Why a click on this element is locked, or ''.
+ * Why a click on this element is locked, and what in the Character Editor to
+ * open instead, or null.
  * @param {Element} el
- * @returns {string}
+ * @returns {{text: string, to: object}|null}
  */
 function lockedReason(el) {
     if (!isLocked()) {
-        return '';
+        return null;
     }
     if (el.closest(LOCKED_IMPORT)) {
-        return t`Import cards in the Card Editor.`;
+        return { text: t`Import cards in the Character Editor.`, to: {} };
     }
     if (el.closest(LOCKED_CREATE)) {
-        return t`Create cards in the Card Editor.`;
+        return { text: t`Create cards in the Character Editor.`, to: {} };
     }
     if (isEditingCard() && el.closest(`${LOCKED_CARD_CONTROLS}, ${LOCKED_GREETING_CONTROLS}`)) {
-        return t`This card is managed by the Card Editor; change it there.`;
+        return { text: t`This card is managed by the Character Editor; change it there.`, to: { card: getOpenCardAvatar() } };
     }
     if (isWorldInEditor() && el.closest(LOCKED_WORLD_CONTROLS)) {
-        return t`This lorebook is a world; edit it in the Card Editor.`;
+        return { text: t`This lorebook is a world; edit it in the Character Editor.`, to: { world: getWorldInEditor() } };
     }
     if (isWorldGroupOpen() && el.closest(LOCKED_GROUP_CONTROLS)) {
-        return t`SideStage keeps this world's group in step with its cards; change the world in the Card Editor.`;
+        return {
+            text: t`SideStage keeps this world's group in step with its cards; change the world in the Character Editor.`,
+            to: { world: getGroupWorld(openGroupId) },
+        };
     }
-    return '';
+    return null;
 }
 
-function toastLocked(reason) {
-    toastr.info(reason, t`Locked by SideStage`, { preventDuplicates: true });
+/**
+ * Says a control is locked; with the Character Editor's address set, clicking
+ * the message opens what it names there.
+ * @param {string} reason
+ * @param {object|null} [to] What to open (see editorLink()); null for no link
+ */
+function toastLocked(reason, to = null) {
+    const href = to ? editorLink(to) : '';
+    const more = to && Object.keys(to).length ? t`Click to open it there.` : t`Click to open the Character Editor.`;
+    toastr.info(href ? `${reason} ${more}` : reason, t`Locked by SideStage`, {
+        preventDuplicates: true,
+        onclick: href ? () => window.open(href, EDITOR_WINDOW) : undefined,
+    });
 }
 
 /**
@@ -3912,7 +4146,7 @@ function lockCommands() {
         const callback = command.callback;
         command.callback = function (...args) {
             if (isLocked() && when()) {
-                toastLocked(t`/${name} is locked: SideStage leaves this to the Card Editor.`);
+                toastLocked(t`/${name} is locked: SideStage leaves this to the Character Editor.`, {});
                 return '';
             }
             return callback.apply(this, args);
@@ -3928,12 +4162,12 @@ function watchLock() {
     // Capture phase: ahead of SillyTavern's own handlers, including clicks
     // made from the keyboard, which the greyed-out styling doesn't stop.
     document.addEventListener('click', (e) => {
-        const reason = e.target instanceof Element ? lockedReason(e.target) : '';
+        const reason = e.target instanceof Element ? lockedReason(e.target) : null;
 
         if (reason) {
             e.preventDefault();
             e.stopImmediatePropagation();
-            toastLocked(reason);
+            toastLocked(reason.text, reason.to);
         }
     }, true);
 
@@ -3968,7 +4202,7 @@ function watchLock() {
         if (isLocked() && card && !target?.closest(OWN_DROP_TARGETS)) {
             e.preventDefault();
             e.stopImmediatePropagation();
-            toastLocked(t`Import cards in the Card Editor.`);
+            toastLocked(t`Import cards in the Character Editor.`, {});
         }
     }, true);
 
@@ -4009,8 +4243,13 @@ function watchLock() {
     $('#WorldInfo > .flex-container').first().after(`
         <div id="ss_world_lock_notice" class="info-block warning">
             <i class="fa-solid fa-triangle-exclamation"></i>
-            <span>${t`This lorebook is a world: greyed-out options are managed by the Card Editor.`}</span>
+            <span>${t`This lorebook is a world: greyed-out options are managed by the Character Editor.`}</span>
+            <a id="ss_world_lock_open" class="ss-editor-link" href="#">${t`Open it there`}</a>
         </div>`);
+    $('#ss_world_lock_open').on('click', (e) => {
+        e.preventDefault();
+        openInEditor({ world: getWorldInEditor() });
+    });
 
     $(document).on('change', '#world_editor_select', applyLock);
     watchCardSaves();
@@ -4022,11 +4261,13 @@ function watchLock() {
 jQuery(async () => {
     stretchMobileLayout();
     watchTablet();
+    pinStatusBar();
     watchStrip();
     getSettings();
     // Before addSettings(), which paints the image checkboxes from it.
     loadImageSettings(getSTContext());
     addSettings();
+    applyEditorLinks();
     addWandButton();
     mountAssistBar();
     watchManualNoteEdits();
@@ -4041,6 +4282,8 @@ jQuery(async () => {
     eventSource.on(event_types.GROUP_UPDATED, applyLock);
     eventSource.on(event_types.WORLDINFO_UPDATED, applyLock);
     document.addEventListener('visibilitychange', onBackToTab);
+    // Two windows side by side never change visibility: coming back is a focus.
+    window.addEventListener('focus', onBackToTab);
     // A card's world can change in ST too (and a deleted card leaves its world).
     eventSource.on(event_types.CHARACTER_EDITED, syncWorldGroupsSoon);
     eventSource.on(event_types.CHARACTER_DELETED, syncWorldGroupsSoon);

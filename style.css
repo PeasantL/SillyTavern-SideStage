@@ -902,7 +902,7 @@ body.ss-tablet:not(.waifuMode):has(> .zoomed_avatar) .ss-strip :is(.gr-body, .gr
     font-size: 0.95em;
 }
 
-/* ═════════════════════ Card Editor lock ═════════════════════ */
+/* ═══════════════════ Character Editor lock ═══════════════════ */
 
 /* Locked controls stay in place, greyed out like SillyTavern's own disabled
    buttons (.menu_button.disabled); locked fields are disabled outright, which
@@ -942,4 +942,20 @@ body.ss-lock-group :is(#rm_group_delete, #rm_group_members [data-action="remove"
 
 body.ss-lock-world #ss_world_lock_notice {
     display: block;
+}
+
+#ss_world_lock_open {
+    margin-left: 0.5em;
+}
+
+/* Links into the Character Editor, only while its address is set (applyEditorLinks()). */
+body:not(.ss-editor-linked) .ss-editor-link,
+.ss-editor-link.ss-no-stage {
+    display: none !important;
+}
+
+/* The group's Author's Note in the drawer: written in the Character Editor, shown here to read. */
+#gr_roster_note.ss-readonly {
+    cursor: default;
+    border-style: dashed;
 }

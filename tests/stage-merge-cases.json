@@ -5,7 +5,6 @@
    "name": "Changes to different fields on each side are both kept",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -40,7 +39,6 @@
    },
    "local": {
     "note": "N2",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -75,7 +73,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -110,7 +107,6 @@
    },
    "merged": {
     "note": "N2",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",
@@ -147,7 +143,6 @@
    "name": "The same field changed on both sides: this side wins",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -182,7 +177,6 @@
    },
    "local": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -217,7 +211,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -252,7 +245,6 @@
    },
    "merged": {
     "note": "N",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",
@@ -289,7 +281,6 @@
    "name": "A field changed only in the file keeps the file's value",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -324,7 +315,6 @@
    },
    "local": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -358,8 +348,7 @@
     ]
    },
    "file": {
-    "note": "N",
-    "activeLayoutId": "B",
+    "note": "From the file",
     "rev": 4,
     "layouts": [
      {
@@ -393,8 +382,7 @@
     ]
    },
    "merged": {
-    "note": "N",
-    "activeLayoutId": "B",
+    "note": "From the file",
     "layouts": [
      {
       "id": "A",
@@ -431,7 +419,6 @@
    "name": "Layouts added on each side are both kept, the file's first",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -466,7 +453,6 @@
    },
    "local": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -509,7 +495,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -552,7 +537,6 @@
    },
    "merged": {
     "note": "N",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",
@@ -605,7 +589,6 @@
    "name": "A layout deleted here and edited in the file stays deleted",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -640,7 +623,6 @@
    },
    "local": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -667,7 +649,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -702,7 +683,6 @@
    },
    "merged": {
     "note": "N",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",
@@ -731,7 +711,6 @@
    "name": "A layout deleted in the file and edited here stays deleted",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -766,7 +745,6 @@
    },
    "local": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -801,7 +779,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -828,7 +805,6 @@
    },
    "merged": {
     "note": "N",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",
@@ -857,7 +833,6 @@
    "name": "Card entries merge card by card",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -892,7 +867,6 @@
    },
    "local": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -927,7 +901,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -962,7 +935,6 @@
    },
    "merged": {
     "note": "N",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",
@@ -999,7 +971,6 @@
    "name": "The same card changed on both sides: this side's whole entry",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -1034,7 +1005,6 @@
    },
    "local": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -1069,7 +1039,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -1104,7 +1073,6 @@
    },
    "merged": {
     "note": "N",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",
@@ -1141,7 +1109,6 @@
    "name": "A card entry removed here is removed",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -1176,7 +1143,6 @@
    },
    "local": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -1207,7 +1173,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -1242,7 +1207,6 @@
    },
    "merged": {
     "note": "N",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",
@@ -1275,7 +1239,6 @@
    "name": "A card entry added in the file is kept",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -1310,7 +1273,6 @@
    },
    "local": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -1345,7 +1307,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -1385,7 +1346,6 @@
    },
    "merged": {
     "note": "N",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",
@@ -1427,7 +1387,6 @@
    "name": "The order is one field: this side's wins whole",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -1462,7 +1421,6 @@
    },
    "local": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -1497,7 +1455,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -1531,7 +1488,6 @@
    },
    "merged": {
     "note": "N",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",
@@ -1553,108 +1509,6 @@
        }
       }
      },
-     {
-      "id": "B",
-      "name": "Road",
-      "note": "",
-      "narrator": "",
-      "order": [],
-      "cards": {}
-     }
-    ]
-   }
-  },
-  {
-   "name": "The selected layout deleted in the file leaves none selected",
-   "base": {
-    "note": "N",
-    "activeLayoutId": "A",
-    "rev": 3,
-    "layouts": [
-     {
-      "id": "A",
-      "name": "Forge",
-      "note": "",
-      "narrator": "Sparks.",
-      "order": [
-       "m.png",
-       "g.png"
-      ],
-      "cards": {
-       "m.png": {
-        "active": true,
-        "text": "Hi."
-       },
-       "g.png": {
-        "active": false,
-        "text": ""
-       }
-      }
-     },
-     {
-      "id": "B",
-      "name": "Road",
-      "note": "",
-      "narrator": "",
-      "order": [],
-      "cards": {}
-     }
-    ]
-   },
-   "local": {
-    "note": "N",
-    "activeLayoutId": "A",
-    "rev": 3,
-    "layouts": [
-     {
-      "id": "A",
-      "name": "Forge",
-      "note": "",
-      "narrator": "Sparks.",
-      "order": [
-       "m.png",
-       "g.png"
-      ],
-      "cards": {
-       "m.png": {
-        "active": true,
-        "text": "Hi."
-       },
-       "g.png": {
-        "active": false,
-        "text": ""
-       }
-      }
-     },
-     {
-      "id": "B",
-      "name": "Road",
-      "note": "",
-      "narrator": "",
-      "order": [],
-      "cards": {}
-     }
-    ]
-   },
-   "file": {
-    "note": "N",
-    "activeLayoutId": "A",
-    "rev": 4,
-    "layouts": [
-     {
-      "id": "B",
-      "name": "Road",
-      "note": "",
-      "narrator": "",
-      "order": [],
-      "cards": {}
-     }
-    ]
-   },
-   "merged": {
-    "note": "N",
-    "activeLayoutId": "",
-    "layouts": [
      {
       "id": "B",
       "name": "Road",
@@ -1670,7 +1524,6 @@
    "name": "Keys neither side knows are kept from the file",
    "base": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -1705,7 +1558,6 @@
    },
    "local": {
     "note": "N2",
-    "activeLayoutId": "A",
     "rev": 3,
     "layouts": [
      {
@@ -1740,7 +1592,6 @@
    },
    "file": {
     "note": "N",
-    "activeLayoutId": "A",
     "rev": 4,
     "layouts": [
      {
@@ -1776,7 +1627,6 @@
    },
    "merged": {
     "note": "N2",
-    "activeLayoutId": "A",
     "layouts": [
      {
       "id": "A",

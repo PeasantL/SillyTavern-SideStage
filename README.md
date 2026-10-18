@@ -14,7 +14,7 @@ edge, dressed in your SillyTavern theme, with one settings drawer.
 
 - **The cast is the group**: The panel lists the open group's members. Who is in the scene is who is unmuted: the panel's first toggle mutes and unmutes a member (SillyTavern's own mute), so SillyTavern's group panel and SideStage always agree. Muted members stay in the group but aren't picked to reply. Use the **Append** card join mode (group settings) so only unmuted members' cards reach the prompt.
 - **Force a turn**: Make a specific member speak next, bypassing the activation strategy. Only members in the scene can: a muted member's button is greyed out. Anything typed in the message box is posted as your user turn first, so the forced reply answers it.
-- **Per-group Author's Note**: Each world's group carries a note; a footer toggle fills the chat's Author's Note with it and clears it again. A layout can override it for one scene. The toggle is saved with the chat, so it comes back on after a refresh and follows the note if you edit it or switch layout; typing over the note by hand turns it off.
+- **Per-group Author's Note**: Each world's group carries a note, written in the Character Editor's World section (the drawer shows it); a footer toggle fills the chat's Author's Note with it and clears it again. A layout can override it for one scene. The toggle is saved with the chat, so it comes back on after a refresh and follows the note if you edit it or switch layout; typing over the note by hand turns it off.
 - **Follows the chat**: Opens on group chats, closes elsewhere. The wand menu toggles it by hand.
 
 ### World groups
@@ -26,9 +26,9 @@ kept by SideStage:
 
 - **Made for you**: When SillyTavern starts (or on ⟳), each world with at least one card and no group of its own gets one: named after the world, the world's cards in the scene, and the Append join mode. Delete it and a new one is made (layouts are kept); a world with no cards yet gets its group when its first card joins.
 - **Members follow the world**: The group's members are exactly the world's cards. A card that joins the world joins the group, muted unless the selected layout puts it in the scene; a card that leaves the world, or any other member, leaves the group. The group's name follows the world's.
-- **Kept in the world**: Which group is the world's, the group's note and its layouts are stored in the world's lorebook (`extensions.sidestage`), so they travel with the world and survive it being renamed. SideStage re-reads the lorebook before each save and only replaces that key, so lore edited elsewhere is kept.
-- **Layouts are edited in the Character Editor**: Its World section makes, renames and deletes layouts and sets their narrator, note, order, cast and turns; SideStage picks which one is in use. Each save raises a revision number in the lorebook; when SideStage finds the layouts were saved elsewhere, it merges instead of overwriting, field by field, so a layout picked here and one edited there are both kept. Edits made in the editor show up when you come back to the SillyTavern tab, open the group's chat or the settings drawer, or press ⟳.
-- **Sync**: The group is brought in step when SillyTavern starts, when you open its chat, and when a card is edited or deleted in SillyTavern. Cards changed outside SillyTavern (in the Character Editor) reach it on a reload, or straight away with the ⟳ button in the panel header or the drawer. The Character Editor shows whether the group has caught up.
+- **Kept in the world**: Which group is the world's, the group's note and its layouts are stored in the world's lorebook (`extensions.sidestage`), so they travel with the world and survive it being renamed. SideStage re-reads the lorebook before each save and only replaces that key, so lore edited elsewhere is kept. Which layout is selected belongs to the group and is kept in its SillyTavern group file (`sidestage_layout`), so picking one never rewrites the lorebook; a selection saved in the lorebook by an earlier version is moved onto the group once.
+- **Layouts are edited in the Character Editor**: Its World section makes, renames and deletes layouts and sets their narrator, note, order, cast and turns; SideStage picks which one is in use. Each save raises a revision number in the lorebook; when SideStage finds the layouts were saved elsewhere, it merges instead of overwriting, field by field, so nothing saved on one side is lost to the other. Edits made in the editor show up when you come back to the SillyTavern tab or window, open the group's chat or the settings drawer, or press ⟳.
+- **Sync**: The group is brought in step when SillyTavern starts, when you open its chat, and when a card is edited or deleted in SillyTavern. Cards changed outside SillyTavern (in the Character Editor) reach it when you come back to the SillyTavern tab or window: SideStage asks for the character list and the lorebooks' settings (two requests, no lore entries), and when a card joined or left a world, or was renamed, it reloads the characters and syncs the groups; a lorebook made a world gets its group the same way. The ⟳ button in the panel header or the drawer does it by hand. Not while a reply is being generated: the next return catches up. The Character Editor shows whether the group has caught up.
 - **Lore stays fresh**: SillyTavern keeps every lorebook it has read until the page is reloaded, so lore edited in the Character Editor wouldn't reach the chat, and SillyTavern's World Info editor would save its old copy over it. When you come back to the SillyTavern tab (or press ⟳), SideStage reads the lorebooks SillyTavern holds again and takes any that changed, reopening one shown in the World Info editor.
 - **Never deleted**: A group whose world is gone (deleted, or its cards unlinked) stays as an ordinary group, with its chats. Groups you make yourself are ordinary groups too: their members are managed in SillyTavern, SideStage mutes and unmutes them and forces turns, but they have no layouts or Author's Note.
 
@@ -106,15 +106,22 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 - **Gallery**: A thumbnail grid of every image found, reached from the viewer's gallery button. It takes the roster's place in the strip until closed.
 - **Chat-Aware Cleanup**: Closing a chat closes the viewer and gallery.
 
-### Card Editor lock
+### Character Editor lock
 
-One setting, on by default: **Lock what the Card Editor manages**. The [Character Card Editor](https://github.com/PeasantL/character-editor) owns cards, worlds' lorebooks and their groups, so with the lock on SillyTavern can't change them behind its back. The controls stay where they are, greyed out like SillyTavern's own unavailable settings, and say where to go instead when clicked. Locked text fields keep their text readable, with a dashed border instead of the grey.
+One setting, on by default: **Lock what the Character Editor manages**. The [Character Editor](https://github.com/PeasantL/character-editor) owns cards, worlds' lorebooks and their groups, so with the lock on SillyTavern can't change them behind its back. The controls stay where they are, greyed out like SillyTavern's own unavailable settings, and say where to go instead when clicked. Locked text fields keep their text readable, with a dashed border instead of the grey.
 
 - **Card fields**: Name, description, greetings, alternate greetings, tags, avatar, favourite, talkativeness and the advanced definitions are read-only while a card is open, in the panel and in its ⛶ expanded editor (creating a new card is untouched). The *Alternate Greetings* popup still opens so you can read them, but its fields are read-only and its add, delete and move buttons are locked.
 - **Card actions**: *Create New Character*, import (button, external URL, files or links dropped on the page), rename, duplicate, delete, *Link to World Info*, *Import Card Lore* and *Replace / Update*, and the `/rename-char`, `/char-delete`, `/char-duplicate` and `/char-update` commands.
-- **Worlds**: A world's lorebook in the World Info editor: its entries are read-only (fields, on/off toggles, new, duplicate, move, delete, reordering and the sorting and memo tools), and it can't be renamed, duplicated or deleted; a notice atop the editor says so, as SillyTavern's own does over Advanced Formatting. SillyTavern saves a lorebook whole from its own copy, so an edit there could put back what the Card Editor changed meanwhile. Ordinary lorebooks are untouched.
+- **Worlds**: A world's lorebook in the World Info editor: its entries are read-only (fields, on/off toggles, new, duplicate, move, delete, reordering and the sorting and memo tools), and it can't be renamed, duplicated or deleted; a notice atop the editor says so, as SillyTavern's own does over Advanced Formatting. SillyTavern saves a lorebook whole from its own copy, so an edit there could put back what the Character Editor changed meanwhile. Ordinary lorebooks are untouched.
 - **World groups**: Deleting a world's group, and adding or removing its members (also `/member-add`, `/member-remove`). Muting stays free.
 - **Saves**: SillyTavern still saves which chat a card last used, but only that, merged into the card file as it is now, instead of writing its whole (possibly stale) copy of the card over the editor's changes.
+
+- **Links**: With the Character Editor's address set in the drawer (as this browser opens it, e.g. `https://host:1019/`), clicking a locked control's message opens what it names there (the card, the world), the World Info notice has *Open it there*, and ✎ beside the panel's layout picker opens the world at the selected layout. Links reuse one editor tab. Blank, there are no links.
+
+### Tablet and home-screen app
+
+- **Tablet layout**: On an iPad (a touch screen at least 744px both ways), SillyTavern's touch layout is kept in landscape too, and the strip takes a column beside the chat.
+- **Status bar**: As a home-screen web app, the status bar stays black instead of taking the theme's Blur Tint, which SillyTavern writes into `theme-color` on every theme load. The bar's style and the first `theme-color` are read from SillyTavern's `index.html` before any extension runs, so those are set by whoever serves SillyTavern.
 
 ## 📥 Installation
 
@@ -131,16 +138,16 @@ One setting, on by default: **Lock what the Card Editor manages**. The [Characte
 - **Open the roster**: Wand menu → **SideStage**, or let it open itself when you enter a group chat.
 - **Mute or unmute a member**: The first toggle on a card in the panel.
 - **Pick a layout**: The dropdown in the panel footer. It mutes and unmutes straight away, and reopens the scene the same way on every new chat.
-- **Build a layout**: In the Character Editor: the world's **Lorebook** tab → *Greeting layouts*.
+- **Build a layout**: In the Character Editor: the world's **Lorebook** tab → *Greeting layouts*. With the editor's address set, ✎ beside the panel's layout picker opens it there.
 - **Rewrite a reply**: The button row above the message box. They run on the
   connection profile selected in SillyTavern; **Directive**,
   **Spell check** and **OOC** read the message box, so type there first.
 - **Open the gallery**: The gallery button in the image's top-right corner.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
 - **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
-  - *Group* — choose which world's group you're editing; ⟳ syncs the world groups; edit its Author's Note.
+  - *Group* — choose which world's group to look at; ⟳ syncs the world groups; its Author's Note (read only: written in the Character Editor, ✎ opens the world there).
   - *Rewrite* — what the **Morality** and **Scene** buttons ask.
-  - *Card Editor* — the lock.
+  - *Character Editor* — its address, for the links into it, and the lock.
   - *Images* — *Change with Greeting*.
 
 ## 🧪 Tests
