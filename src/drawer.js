@@ -6,7 +6,7 @@ import { groups } from '../../../../group-chats.js';
 import { t } from '../../../../i18n.js';
 import { applyEditorLinks, getSettings, openInEditor } from './settings.js';
 import { getCurrentGroup } from './util.js';
-import { getGroupWorld, getStage, getWorldGroups, pullWorldStage, refreshWorlds } from './worlds.js';
+import { getGroupWorld, getWorldGroups, pullWorldStage, refreshWorlds } from './worlds.js';
 import { imageSettings } from './images.js';
 import { applyLock } from './lock.js';
 
@@ -39,11 +39,6 @@ function getSettingsGroup() {
     return groups.find(x => x.id === getSettingsGroupId()) ?? null;
 }
 
-/** @returns {Stage|null} The stage the settings drawer edits. */
-function getSettingsStage() {
-    return getStage(getSettingsGroupId());
-}
-
 
 
 const settingsHtml = `
@@ -64,11 +59,8 @@ const settingsHtml = `
                         <i class="fa-solid fa-rotate fa-fw"></i>
                     </div>
                 </div>
-                <label for="gr_roster_note">Author's Note for this group</label>
-                <textarea id="gr_roster_note" class="text_pole textarea_compact ss-readonly" rows="3" readonly
-                          placeholder="None yet. Filled into this chat's Author's Note when the panel toggle is on"></textarea>
                 <div class="flex-container alignItemsCenter">
-                    <small class="ss-settings-hint flex1">The note and the layouts are written in the Character Editor's World section.</small>
+                    <small class="ss-settings-hint flex1">The group's Author's Note and layouts are written in the Character Editor's World section.</small>
                     <div id="gr_world_open" class="menu_button menu_button_icon interactable ss-editor-link" title="Open this world in the Character Editor">
                         <i class="fa-solid fa-pen-to-square fa-fw"></i>
                     </div>
@@ -171,7 +163,6 @@ export function renderSettings() {
 
     renderGroupSelect();
     renderWorldRow();
-    $('#gr_roster_note').val(getSettingsStage()?.note ?? '').prop('disabled', !getSettingsStage());
     $('#ss_editor_url').val(getSettings().editorUrl ?? '');
     $('#ss_morality_request').val(getSettings().moralityRequest ?? '');
     $('#ss_scene_request').val(getSettings().sceneRequest ?? '');

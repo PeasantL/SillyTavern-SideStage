@@ -201,6 +201,23 @@ function lockedReason(el) {
 }
 
 /**
+ * Why this locked field is read-only, and what in the Character Editor to
+ * open instead, or null: a card's field (its form, Alternate Greetings, a ⛶
+ * expanded editor) or a world's lorebook entry.
+ * @param {Element} el
+ * @returns {{text: string, to: object}|null}
+ */
+function lockedFieldReason(el) {
+    if (!isLocked() || !el.closest('[data-ss-locked], .maximized_textarea.ss-locked-field')) {
+        return null;
+    }
+    if (el.closest(WORLD_ENTRIES)) {
+        return { text: t`This lorebook is a world; edit it in the Character Editor.`, to: { world: getWorldInEditor() } };
+    }
+    return { text: t`This card is managed by the Character Editor; change it there.`, to: { card: getOpenCardAvatar() } };
+}
+
+/**
  * Says a control is locked; with the Character Editor's address set, clicking
  * the message opens what it names there.
  * @param {string} reason
@@ -273,6 +290,16 @@ export function watchLock() {
         if (reason) {
             e.preventDefault();
             e.stopImmediatePropagation();
+            toastLocked(reason.text, reason.to);
+        }
+    }, true);
+
+    // A locked field is disabled, so it gets no clicks, only pointer events: say why when it is tapped or
+    // clicked. Not on pointerdown: a touch that turns into a scroll ends in pointercancel instead.
+    document.addEventListener('pointerup', (e) => {
+        const reason = e.target instanceof Element && e.button === 0 ? lockedFieldReason(e.target) : null;
+
+        if (reason) {
             toastLocked(reason.text, reason.to);
         }
     }, true);

@@ -953,9 +953,3 @@ body:not(.ss-editor-linked) .ss-editor-link,
 .ss-editor-link.ss-no-stage {
     display: none !important;
 }
-
-/* The group's Author's Note in the drawer: written in the Character Editor, shown here to read. */
-#gr_roster_note.ss-readonly {
-    cursor: default;
-    border-style: dashed;
-}

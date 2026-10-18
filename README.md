@@ -14,7 +14,7 @@ edge, dressed in your SillyTavern theme, with one settings drawer.
 
 - **The cast is the group**: The panel lists the open group's members. Who is in the scene is who is unmuted: the panel's first toggle mutes and unmutes a member (SillyTavern's own mute), so SillyTavern's group panel and SideStage always agree. Muted members stay in the group but aren't picked to reply. Use the **Append** card join mode (group settings) so only unmuted members' cards reach the prompt.
 - **Force a turn**: Make a specific member speak next, bypassing the activation strategy. Only members in the scene can: a muted member's button is greyed out. Anything typed in the message box is posted as your user turn first, so the forced reply answers it.
-- **Per-group Author's Note**: Each world's group carries a note, written in the Character Editor's World section (the drawer shows it); a footer toggle fills the chat's Author's Note with it and clears it again. A layout can override it for one scene. The toggle is saved with the chat, so it comes back on after a refresh and follows the note if you edit it or switch layout; typing over the note by hand turns it off.
+- **Per-group Author's Note**: Each world's group carries a note, written in the Character Editor's World section; a footer toggle fills the chat's Author's Note with it and clears it again. A layout can override it for one scene. The toggle is saved with the chat, so it comes back on after a refresh and follows the note if you edit it or switch layout; typing over the note by hand turns it off.
 - **Follows the chat**: Opens on group chats, closes elsewhere. The wand menu toggles it by hand.
 
 ### World groups
@@ -108,7 +108,7 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 
 ### Character Editor lock
 
-One setting, on by default: **Lock what the Character Editor manages**. The [Character Editor](https://github.com/PeasantL/character-editor) owns cards, worlds' lorebooks and their groups, so with the lock on SillyTavern can't change them behind its back. The controls stay where they are, greyed out like SillyTavern's own unavailable settings, and say where to go instead when clicked. Locked text fields keep their text readable, with a dashed border instead of the grey.
+One setting, on by default: **Lock what the Character Editor manages**. The [Character Editor](https://github.com/PeasantL/character-editor) owns cards, worlds' lorebooks and their groups, so with the lock on SillyTavern can't change them behind its back. The controls stay where they are, greyed out like SillyTavern's own unavailable settings, and say where to go instead when clicked. Locked text fields keep their text readable, with a dashed border instead of the grey, and say the same when clicked or tapped.
 
 - **Card fields**: Name, description, greetings, alternate greetings, tags, avatar, favourite, talkativeness and the advanced definitions are read-only while a card is open, in the panel and in its ⛶ expanded editor (creating a new card is untouched). The *Alternate Greetings* popup still opens so you can read them, but its fields are read-only and its add, delete and move buttons are locked.
 - **Card actions**: *Create New Character*, import (button, external URL, files or links dropped on the page), rename, duplicate, delete, *Link to World Info*, *Import Card Lore* and *Replace / Update*, and the `/rename-char`, `/char-delete`, `/char-duplicate` and `/char-update` commands.
@@ -145,7 +145,7 @@ One setting, on by default: **Lock what the Character Editor manages**. The [Cha
 - **Open the gallery**: The gallery button in the image's top-right corner.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
 - **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
-  - *Group* — choose which world's group to look at; ⟳ syncs the world groups; its Author's Note (read only: written in the Character Editor, ✎ opens the world there).
+  - *Group* — choose which world's group to look at; ⟳ syncs the world groups; ✎ opens the world in the Character Editor, where its Author's Note and layouts are written.
   - *Rewrite* — what the **Morality** and **Scene** buttons ask.
   - *Character Editor* — its address, for the links into it, and the lock.
   - *Images* — *Change with Greeting*.
