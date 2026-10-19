@@ -7,7 +7,7 @@ import { t } from '../../../../i18n.js';
 import { openInEditor } from './settings.js';
 import { getCharacterByAvatar, getCurrentGroup } from './util.js';
 import { GROUP_LAYOUT_KEY, getActiveLayout, getActiveStage, getGroupWorld, pullWorldStage, refreshWorlds, syncWorldGroup } from './worlds.js';
-import { applyLayoutMutes, forceTurn, getEffectiveNote, isNoteApplied, setMuted, setNoteApplied, syncNoteToChat } from './scene.js';
+import { applyLayoutMutes, forceTurn, getEffectiveNote, isNoteApplied, moveInOrOut, setNoteApplied, syncNoteToChat } from './scene.js';
 import { renderSettings, resetSettingsGroup } from './drawer.js';
 import { refocusViewer } from './images.js';
 
@@ -188,21 +188,28 @@ function makeCardRow(avatar) {
         return { label, input };
     }
 
-    // Toggle 1: in the scene (unmuted) or muted
+    // Toggle 1: in the scene (unmuted) or muted. Bringing someone in or
+    // sending them off plays out in the chat (moveInOrOut()).
     const member = makeIconToggle('gr-member', 'fa-user-check', isMuted
-        ? t`Muted: not picked to reply. Click to bring into the scene`
-        : t`In the scene. Click to mute`);
+        ? t`Out of the scene. Click to bring them in: the narrator says they entered, then they speak`
+        : t`In the scene. Click to send them off: they speak, then the narrator says they left`);
     member.input.checked = !isMuted;
     member.input.disabled = !group || !character;
     member.input.addEventListener('change', async () => {
         const inScene = member.input.checked;
         member.input.disabled = true;
+        row.classList.add('gr-speaking');
         try {
-            const changed = await setMuted(avatar, !inScene);
-            if (!changed) {
+            const moved = await moveInOrOut(avatar, inScene);
+            if (!moved) {
                 member.input.checked = !inScene;
             }
+        } catch (error) {
+            console.error('[SideStage] Failed to move a character in or out of the scene', error);
+            toastr.error(error?.message || t`Unknown error`, inScene ? t`Failed to bring them in` : t`Failed to send them off`);
+            member.input.checked = !inScene;
         } finally {
+            row.classList.remove('gr-speaking');
             member.input.disabled = false;
             refreshPanel();
         }

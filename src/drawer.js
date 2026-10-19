@@ -70,6 +70,17 @@ const settingsHtml = `
             <div class="ss-settings-divider"></div>
 
             <div class="ss-settings-section">
+                <div class="ss-settings-heading">Entrances and exits</div>
+                <label for="ss_enter_line">Narrator, as someone enters</label>
+                <input id="ss_enter_line" class="text_pole" type="text" placeholder="{{char}} entered the scene.">
+                <label for="ss_exit_line">Narrator, as someone leaves</label>
+                <input id="ss_exit_line" class="text_pole" type="text" placeholder="{{char}} left the scene.">
+                <small class="ss-settings-hint">The roster's first toggle plays it out: bringing someone in posts the first line, then they speak; sending them off has them speak, then posts the second. <code>{{char}}</code> is them. Blank restores the default.</small>
+            </div>
+
+            <div class="ss-settings-divider"></div>
+
+            <div class="ss-settings-section">
                 <div class="ss-settings-heading">Rewrite</div>
                 <small class="ss-settings-hint">The rewrites run on the connection profile selected in SillyTavern (or the active connection when none is), and the asides send the whole chat.</small>
                 <label for="ss_morality_request">Morality asks</label>
@@ -166,6 +177,8 @@ export function renderSettings() {
     $('#ss_editor_url').val(getSettings().editorUrl ?? '');
     $('#ss_morality_request').val(getSettings().moralityRequest ?? '');
     $('#ss_scene_request').val(getSettings().sceneRequest ?? '');
+    $('#ss_enter_line').val(getSettings().enterLine ?? '');
+    $('#ss_exit_line').val(getSettings().exitLine ?? '');
 }
 
 export function addSettings() {
@@ -178,6 +191,16 @@ export function addSettings() {
 
     $('#ss_scene_request').on('input', function () {
         getSettings().sceneRequest = String($(this).val());
+        saveSettingsDebounced();
+    });
+
+    $('#ss_enter_line').on('input', function () {
+        getSettings().enterLine = String($(this).val());
+        saveSettingsDebounced();
+    });
+
+    $('#ss_exit_line').on('input', function () {
+        getSettings().exitLine = String($(this).val());
         saveSettingsDebounced();
     });
 

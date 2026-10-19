@@ -13,6 +13,7 @@ edge, dressed in your SillyTavern theme, with one settings drawer.
 ### Roster
 
 - **The cast is the group**: The panel lists the open group's members. Who is in the scene is who is unmuted: the panel's first toggle mutes and unmutes a member (SillyTavern's own mute), so SillyTavern's group panel and SideStage always agree. Muted members stay in the group but aren't picked to reply. Use the **Append** card join mode (group settings) so only unmuted members' cards reach the prompt.
+- **Entrances and exits**: The first toggle plays the move out in the chat. Bringing someone in unmutes them, the narrator says they entered the scene, then they take a full turn, written as their arrival. Sending someone off has them take a full turn, written as their exit, then the narrator says they left, then mutes them; if that turn brings no reply (stopped, or it failed), they stay in the scene. Anything typed in the message box is posted first. The narrator's two lines are editable in the settings drawer. Picking a layout and opening a new chat mute and unmute without any of this, as the layout's opening sets the scene.
 - **Force a turn**: Make a specific member speak next, bypassing the activation strategy. Only members in the scene can: a muted member's button is greyed out. Anything typed in the message box is posted as your user turn first, so the forced reply answers it.
 - **Per-group Author's Note**: Each world's group carries a note, written in the Character Editor's World section; a footer toggle fills the chat's Author's Note with it and clears it again. A layout can override it for one scene. The toggle is saved with the chat, so it comes back on after a refresh and follows the note if you edit it or switch layout; typing over the note by hand turns it off.
 - **Follows the chat**: Opens on group chats, closes elsewhere. The wand menu toggles it by hand.
@@ -136,7 +137,7 @@ One setting, on by default: **Lock what the Character Editor manages**. The [Cha
 ## 🎮 How to Use
 
 - **Open the roster**: Wand menu → **SideStage**, or let it open itself when you enter a group chat.
-- **Mute or unmute a member**: The first toggle on a card in the panel.
+- **Bring a member in or send them off**: The first toggle on a card in the panel. They enter or leave in the chat, with a turn of their own.
 - **Pick a layout**: The dropdown in the panel footer. It mutes and unmutes straight away, and reopens the scene the same way on every new chat.
 - **Build a layout**: In the Character Editor: the world's **Lorebook** tab → *Greeting layouts*. With the editor's address set, ✎ beside the panel's layout picker opens it there.
 - **Rewrite a reply**: The button row above the message box. They run on the
@@ -144,8 +145,9 @@ One setting, on by default: **Lock what the Character Editor manages**. The [Cha
   **Spell check** and **OOC** read the message box, so type there first.
 - **Open the gallery**: The gallery button in the image's top-right corner.
 - **Navigate images**: On-screen `<` `>` arrows or keyboard `←` `→`. `Escape` closes the viewer.
-- **Settings**: Extensions panel → **SideStage**. One drawer, four sections:
+- **Settings**: Extensions panel → **SideStage**. One drawer, five sections:
   - *Group* — choose which world's group to look at; ⟳ syncs the world groups; ✎ opens the world in the Character Editor, where its Author's Note and layouts are written.
+  - *Entrances and exits* — what the narrator says as someone enters or leaves.
   - *Rewrite* — what the **Morality** and **Scene** buttons ask.
   - *Character Editor* — its address, for the links into it, and the lock.
   - *Images* — *Change with Greeting*.

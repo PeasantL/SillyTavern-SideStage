@@ -21,6 +21,14 @@ export const rosterDefaults = {
     moralityRequest: 'Describe the evil of the current scene in detail.',
     sceneRequest: 'Describe the current scene in detail.',
     /**
+     * What the narrator says when the roster brings a member into the scene
+     * (before their turn) or sends one off (after it). {{char}} is them.
+     * Blank falls back to these defaults.
+     * @type {string}
+     */
+    enterLine: '{{char}} entered the scene.',
+    exitLine: '{{char}} left the scene.',
+    /**
      * Locks what the Character Editor manages (see the Character Editor lock):
      * card fields, new cards, import, rename, duplicate and delete, and worlds' lorebooks
      * and groups. The controls stay, greyed out.

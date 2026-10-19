@@ -1,7 +1,7 @@
 /**
  * The open group's scene: mutes, the opening a layout writes, forced turns and the Author's Note toggle.
  */
-import { eventSource, event_types, characters, getThumbnailUrl, isGenerating, Generate, menu_type, sendMessageAsUser, extractMessageBias, chat, chat_metadata, addOneMessage, substituteParams, system_message_types, system_avatar, default_avatar, saveChatConditional } from '../../../../../script.js';
+import { eventSource, event_types, characters, getThumbnailUrl, isGenerating, Generate, menu_type, sendMessageAsUser, extractMessageBias, chat, chat_metadata, addOneMessage, substituteParams, system_message_types, system_avatar, default_avatar, saveChatConditional, setExtensionPrompt, extension_prompt_types, extension_prompt_roles } from '../../../../../script.js';
 import { getMessageTimeStamp } from '../../../../RossAscends-mods.js';
 import { saveMetadataDebounced } from '../../../../extensions.js';
 import { selected_group, openGroupId, editGroup, unshallowGroupMembers, select_group_chats } from '../../../../group-chats.js';
@@ -11,6 +11,7 @@ import { getLayoutEntry, getLayoutOrder, getTurnText } from './stage.js';
 import { getCharacterByAvatar, getCurrentGroup } from './util.js';
 import { getActiveLayout, getActiveStage, getGroupWorld } from './worlds.js';
 import { refreshPanel } from './panel.js';
+import { getSettings, rosterDefaults } from './settings.js';
 
 /** Chat-scoped display name for narrator messages, set by ST's /sysname. */
 const NARRATOR_NAME_KEY = 'narrator_name';
@@ -18,6 +19,8 @@ const NARRATOR_NAME_KEY = 'narrator_name';
 const NOTE_PROMPT_KEY = 'note_prompt';
 /** Chat-scoped state of the footer's Author's Note toggle. */
 const NOTE_APPLIED_KEY = 'sidestage_note_applied';
+/** Extension prompt that tells the model, for one turn, that its character is entering or leaving. */
+const MOVE_PROMPT_KEY = 'sidestage_move';
 
 
 /**
@@ -236,19 +239,20 @@ function buildGreetingMessage(character, text) {
 }
 
 /**
- * Builds the layout's narrator line.
+ * Builds a narrator line: the layout's opening, or an entrance or exit.
  *
  * A narrator-type message, which is what earns it the system avatar and, in
  * formatMessageHistoryItem(), a place in the prompt with no name in front of
  * it — scene text rather than a line of dialogue from someone. Not a system
  * message, so it does reach the prompt.
- * @param {Layout} layout
+ * @param {string} text
+ * @param {string} [name2] Who {{char}} is in the text
  * @returns {object|null}
  */
-function buildNarratorMessage(layout) {
-    const text = layout.narrator.trim();
+function buildNarratorMessage(text, name2 = undefined) {
+    const mes = substituteParams(String(text ?? '').trim(), name2 ? { name2Override: name2 } : undefined);
 
-    if (!text) {
+    if (!mes) {
         return null;
     }
 
@@ -257,13 +261,26 @@ function buildNarratorMessage(layout) {
         is_user: false,
         is_system: false,
         send_date: getMessageTimeStamp(),
-        mes: substituteParams(text),
+        mes: mes,
         force_avatar: system_avatar,
         extra: {
             type: system_message_types.NARRATOR,
             gen_id: Date.now() * Math.random() * 1000000,
         },
     };
+}
+
+/**
+ * Adds a message to the end of the chat, emitting what the greeting loop
+ * emits, so extensions that act on new messages — TTS, translation — see it.
+ * @param {object} message
+ * @returns {Promise<void>}
+ */
+async function postMessage(message) {
+    chat.push(message);
+    await eventSource.emit(event_types.MESSAGE_RECEIVED, (chat.length - 1), 'first_message');
+    addOneMessage(message);
+    await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, (chat.length - 1), 'first_message');
 }
 
 /**
@@ -293,7 +310,7 @@ export async function openSceneFromLayout() {
         return;
     }
 
-    const messages = [buildNarratorMessage(layout)];
+    const messages = [buildNarratorMessage(layout.narrator)];
 
     for (const avatar of getLayoutOrder(group, layout)) {
         const character = getCharacterByAvatar(avatar);
@@ -312,12 +329,7 @@ export async function openSceneFromLayout() {
     $('#chat').find('.mes').remove();
 
     for (const message of messages.filter(x => x)) {
-        chat.push(message);
-        // Emitted the way the greeting loop emits its own, so extensions that
-        // act on new messages — TTS, translation — see these too.
-        await eventSource.emit(event_types.MESSAGE_RECEIVED, (chat.length - 1), 'first_message');
-        addOneMessage(message);
-        await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, (chat.length - 1), 'first_message');
+        await postMessage(message);
     }
 
     await saveChatConditional();
@@ -369,6 +381,87 @@ export async function forceTurn(avatar) {
 
     await unshallowGroupMembers(selected_group);
     await Generate('normal', { force_chid: chid });
+}
+
+/**
+ * Brings a member into the scene or sends them off it, in the chat as well as
+ * in the group: the roster's first toggle.
+ *
+ * Entering: they are unmuted, the narrator says they entered, then they take a
+ * full turn. Leaving: they take a full turn, the narrator says they left, then
+ * they are muted. Either way the turn is told, for that one reply, that they
+ * are arriving or going. Anything typed in the message box is posted first.
+ * A leaving turn that brings no reply (stopped, failed) leaves them in the
+ * scene, with no narrator line.
+ * @param {string} avatar Avatar file name of the character
+ * @param {boolean} entering
+ * @returns {Promise<boolean>} Whether they ended up where they were sent
+ */
+export async function moveInOrOut(avatar, entering) {
+    const group = getCurrentGroup();
+    const character = getCharacterByAvatar(avatar);
+
+    if (!group || !Array.isArray(group.members) || !group.members.includes(avatar) || !character) {
+        return false;
+    }
+
+    if (entering !== !!group.disabled_members?.includes(avatar)) {
+        return false;
+    }
+
+    try {
+        await waitUntilCondition(() => !isGenerating(), 10000, 100);
+    } catch {
+        toastr.warning(t`Wait for the reply being generated to finish first.`);
+        return false;
+    }
+
+    const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
+    if (String(textarea?.value ?? '').trim()) {
+        await sendUserTurnOnly();
+    }
+
+    const key = entering ? 'enterLine' : 'exitLine';
+    const line = buildNarratorMessage(String(getSettings()[key] ?? '').trim() || rosterDefaults[key], character.name);
+
+    if (entering) {
+        if (!await setMuted(avatar, false)) {
+            return false;
+        }
+
+        if (line) {
+            await postMessage(line);
+            await saveChatConditional();
+        }
+    }
+
+    const before = chat.length;
+    const nudge = entering
+        ? `[${character.name} has just entered the scene. Write their arrival.]`
+        : `[${character.name} is leaving the scene. Write their exit.]`;
+
+    setExtensionPrompt(MOVE_PROMPT_KEY, nudge, extension_prompt_types.IN_CHAT, 0, false, extension_prompt_roles.SYSTEM);
+    try {
+        await forceTurn(avatar);
+    } finally {
+        setExtensionPrompt(MOVE_PROMPT_KEY, '', extension_prompt_types.IN_CHAT, 0);
+    }
+
+    if (entering) {
+        return true;
+    }
+
+    if (!chat.slice(before).some(x => !x.is_user && x.original_avatar === avatar)) {
+        toastr.info(t`${character.name} had no reply, so they are still in the scene.`);
+        return false;
+    }
+
+    if (line) {
+        await postMessage(line);
+        await saveChatConditional();
+    }
+
+    return setMuted(avatar, true);
 }
 
 /**
