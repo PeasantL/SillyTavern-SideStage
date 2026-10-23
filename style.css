@@ -169,6 +169,31 @@ body.ss-tablet #world_popup {
     margin-top: 0;
 }
 
+/* Taking that height away left two scroll containers behind that can no longer
+   scroll. Core makes #world_popup a scroller in its mobile block (overflow-y:
+   auto) and #world_popup_entries_list one in world-info.css, both on the
+   strength of the height the rule above removes: with their height their
+   content's, neither ever overflows, so neither has anything to scroll — but
+   each is still a scroll container, and on iOS a scroll container that cannot
+   scroll swallows a vertical drag rather than passing it on. A lorebook opened
+   out taller than the drawer could not be dragged up: the gesture landed on
+   the entries list and stopped there, and the drawer, the one box that does
+   scroll (core's .drawer-content.openDrawer), never saw it. Core assumes the
+   same box: navigating to an entry sets scrollTop on #WorldInfo
+   (world-info.js), on neither of these.
+
+   Both hand their overflow back to the drawer. Sideways stays clipped, as the
+   popup's own overflow used to clip it — `clip` rather than `hidden` or `auto`
+   so the axis clips without making a scroll container again, which would
+   restore the vertical capture (a `visible` paired with `auto` or `scroll`
+   computes to `auto`). Wide entry rows are held inside the drawer either way,
+   rather than scrolling it sideways. */
+body.ss-tablet #world_popup,
+body.ss-tablet #world_popup_entries_list {
+    overflow-x: clip;
+    overflow-y: visible;
+}
+
 /* Core's mobile block centres the zoomed avatar on screen, over the chat.
    Here it opens in the strip instead, in the panel between the section header
    and the image slot — the part blanked below while it is open — centred in
