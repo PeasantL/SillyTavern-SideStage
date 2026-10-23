@@ -11,19 +11,21 @@
  * their merge), settings, util, worlds (world groups and catching up with the
  * Character Editor), scene (mutes, openings, turns, Author's Note), rewrite
  * (the button row), panel (the strip and roster), drawer (settings), images,
- * tablet and lock (the Character Editor lock).
+ * tablet, lock (the Character Editor lock) and narrator (the hidden card that
+ * answers the asides).
  */
 import { eventSource, event_types } from '../../../../script.js';
 import { applyEditorLinks, getSettings } from './src/settings.js';
 import { getSTContext } from './src/util.js';
 import { onBackToTab, refreshWorlds, renameInStages, syncWorldGroupsSoon } from './src/worlds.js';
 import { applyLayoutGreeting, openSceneFromLayout, quietOtherGreetingPickers, watchManualNoteEdits } from './src/scene.js';
-import { mountAssistBar } from './src/rewrite.js';
+import { mountAssistBar, watchOocGhosting } from './src/rewrite.js';
 import { addWandButton, refreshPanel, syncPanelToChat, watchStrip } from './src/panel.js';
 import { addSettings } from './src/drawer.js';
 import { initImages, loadImageSettings } from './src/images.js';
 import { pinStatusBar, stretchMobileLayout, watchTablet } from './src/tablet.js';
 import { applyLock, lockCommands, watchLock } from './src/lock.js';
+import { hideNarratorFromList } from './src/narrator.js';
 
 jQuery(async () => {
     stretchMobileLayout();
@@ -37,8 +39,10 @@ jQuery(async () => {
     applyEditorLinks();
     addWandButton();
     mountAssistBar();
+    watchOocGhosting();
     watchManualNoteEdits();
     watchLock();
+    hideNarratorFromList();
 
     eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
     eventSource.on(event_types.GROUP_CHAT_CREATED, openSceneFromLayout);

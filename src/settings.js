@@ -21,6 +21,15 @@ export const rosterDefaults = {
     moralityRequest: 'Describe the evil of the current scene in detail.',
     sceneRequest: 'Describe the current scene in detail.',
     /**
+     * The name of the group member who answers the OOC / Morality / Scene
+     * asides, as a forced turn, so a swipe asks them again. Muted members
+     * still answer. No member by that name, and SideStage's own narrator card
+     * answers where the group has it (every world's group does). Blank, and the
+     * aside goes out like a Quick Reply and whoever the group picks answers.
+     * @type {string}
+     */
+    oocNarrator: 'Narrator',
+    /**
      * What the narrator says when the roster brings a member into the scene
      * (before their turn) or sends one off (after it). {{char}} is them.
      * Blank falls back to these defaults.

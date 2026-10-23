@@ -14,6 +14,7 @@ import { refreshGroupControlPanel } from './scene.js';
 import { refreshPanel } from './panel.js';
 import { renderSettings } from './drawer.js';
 import { applyLock } from './lock.js';
+import { ensureNarratorCard, getNarratorAvatar } from './narrator.js';
 
 /**
  * The stage of one group, kept in its world's lorebook.
@@ -362,7 +363,8 @@ async function takeSelectedLayout(group, stage) {
  * Brings a world's group in step with its world: cards of the world that
  * aren't members join (muted, unless the selected layout puts them in the
  * scene), members that aren't in the world leave, and the name follows the
- * world's (renamed in the Character Editor).
+ * world's (renamed in the Character Editor). The narrator is a member too,
+ * always muted: it answers the asides as a forced turn, never a round.
  * @param {string} groupId
  * @returns {Promise<boolean>} Whether the group was changed
  */
@@ -382,15 +384,18 @@ export async function syncWorldGroup(groupId) {
         return false;
     }
 
+    const narrator = getNarratorAvatar();
+    const wanted = narrator ? [...cast, narrator] : cast;
     const members = Array.isArray(group.members) ? group.members : [];
     const muted = Array.isArray(group.disabled_members) ? group.disabled_members : [];
-    const kept = members.filter(avatar => cast.includes(avatar));
-    const joined = cast.filter(avatar => !kept.includes(avatar));
+    const kept = members.filter(avatar => wanted.includes(avatar));
+    const joined = wanted.filter(avatar => !kept.includes(avatar));
     const nextMembers = [...kept, ...joined];
     const layout = getActiveLayout(groupId);
     const nextMuted = [
-        ...muted.filter(avatar => kept.includes(avatar)),
-        ...joined.filter(avatar => !(layout && getLayoutEntry(layout, avatar).active)),
+        ...muted.filter(avatar => kept.includes(avatar) && avatar !== narrator),
+        ...joined.filter(avatar => avatar !== narrator && !(layout && getLayoutEntry(layout, avatar).active)),
+        ...(narrator ? [narrator] : []),
     ];
 
     const sameMembers = nextMembers.length === members.length && nextMembers.every((x, i) => members[i] === x);
@@ -441,6 +446,7 @@ export function refreshWorlds({ reload = false } = {}) {
                 await refreshCachedLorebooks();
             }
 
+            await ensureNarratorCard();
             await resolveWorlds();
             await ensureWorldGroups();
             await syncWorldGroups();
@@ -474,13 +480,14 @@ export const syncWorldGroupsSoon = debounce(() => {
  * @param {object} data The world's lorebook, freshly read
  */
 async function createWorldGroup(world, data) {
+    const narrator = getNarratorAvatar();
     const response = await fetch('/api/groups/create', {
         method: 'POST',
         headers: getRequestHeaders(),
         body: JSON.stringify({
             name: world,
-            members: getWorldCast(world),
-            disabled_members: [],
+            members: [...getWorldCast(world), ...(narrator ? [narrator] : [])],
+            disabled_members: narrator ? [narrator] : [],
             avatar_url: default_avatar,
             allow_self_responses: false,
             activation_strategy: 0,

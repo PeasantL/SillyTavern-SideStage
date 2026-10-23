@@ -1,13 +1,16 @@
 /**
  * The button row above the message box: Perspective, Directive and Spell check rewrites, and the OOC asides.
  */
-import { isGenerating, saveSettingsDebounced, chat, updateMessageBlock, messageFormatting, scrollChatToBottom, substituteParams, generateRaw, name1, system_message_types, saveChatConditional, ensureSwipes, syncMesToSwipe, syncSwipeToMes, refreshSwipeButtons } from '../../../../../script.js';
+import { eventSource, event_types, isGenerating, saveSettingsDebounced, chat, updateMessageBlock, messageFormatting, scrollChatToBottom, substituteParams, generateRaw, name1, system_message_types, saveChatConditional, ensureSwipes, syncMesToSwipe, syncSwipeToMes, refreshSwipeButtons } from '../../../../../script.js';
 import { getMessageTimeStamp } from '../../../../RossAscends-mods.js';
 import { hideChatMessageRange } from '../../../../chats.js';
 import { parseReasoningFromString } from '../../../../reasoning.js';
 import { waitUntilCondition } from '../../../../utils.js';
 import { t } from '../../../../i18n.js';
 import { getSettings, rosterDefaults } from './settings.js';
+import { forceTurn } from './scene.js';
+import { getCharacterByAvatar, getCurrentGroup } from './util.js';
+import { isNarrator } from './narrator.js';
 
 /**
  * The footer's three rewrite actions.
@@ -665,18 +668,120 @@ async function runSpellCheck() {
  * The OOC / Morality / Scene buttons send their line exactly the way a Quick
  * Reply does: it goes into the message box and Send is clicked, so the answer
  * is an ordinary Generate() turn — same prompt, same context, same streaming.
+ *
+ * In a group with a member named in the "Answered by" setting, that member
+ * answers instead, as a forced turn: a swipe then regenerates as them, since
+ * a group swipe goes to whoever spoke last.
  */
 
 // How long a turn may take before the Ghost toggle stops waiting on it.
 const OOC_TURN_TIMEOUT = 10 * 60 * 1000;
 
 /**
+ * Set on a narrator-answered ask (to the narrator's avatar) while the exchange
+ * waits to be ghosted. Ghosting it at once would break the swipe: a hidden
+ * reply swipes as an earlier speaker, and the hidden ask is left out of the
+ * prompt. So it is ghosted when the next ordinary turn starts instead.
+ */
+const PENDING_GHOST_KEY = 'sidestage_ooc_ghost';
+
+/**
+ * Who answers the asides in the open group: the member named in the "Answered
+ * by" setting (matched without regard to case), or else SideStage's own
+ * narrator card when the group has it, as every world's group does. Muted
+ * members count: they answer asides but not rounds.
+ * @returns {string|null} Their avatar, or null outside a group, with the setting blank, or with neither
+ */
+function getOocNarrator() {
+    const name = String(getSettings().oocNarrator ?? '').trim().toLowerCase();
+    const group = getCurrentGroup();
+
+    if (!name || !Array.isArray(group?.members)) {
+        return null;
+    }
+
+    const named = group.members.find(avatar => getCharacterByAvatar(avatar)?.name?.trim().toLowerCase() === name);
+    return named ?? group.members.find(isNarrator) ?? null;
+}
+
+/**
+ * Has the narrator answer an OOC line as a forced turn. With the Ghost toggle
+ * on, the ask is marked so ghostPendingOoc() hides the exchange later.
+ * @param {string} oocLine
+ * @param {string} narrator Avatar of the group member who answers
+ * @returns {Promise<void>}
+ */
+async function runNarratorOocTurn(oocLine, narrator) {
+    const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
+
+    if (!textarea) {
+        return;
+    }
+
+    const askMessageId = chat.length;
+
+    // forceTurn() posts what is in the box as the user's turn, then generates.
+    textarea.value = substituteParams(oocLine);
+    await forceTurn(narrator);
+
+    const ask = chat[askMessageId];
+
+    if (getSettings().oocGhost && ask?.is_user) {
+        ask.extra ??= {};
+        ask.extra[PENDING_GHOST_KEY] = narrator;
+        await saveChatConditional();
+    }
+}
+
+/**
+ * Ghosts the narrator-answered exchanges still waiting, once a turn that moves
+ * the chat on starts. Swipes, regenerations and continues of the answer leave
+ * them be, and so do quiet and impersonate calls. GENERATION_STARTED fires
+ * before the prompt is built, so the exchange is already out of it.
+ * @param {string} type
+ * @param {object} _params
+ * @param {boolean} dryRun
+ * @returns {Promise<void>}
+ */
+async function ghostPendingOoc(type, _params, dryRun) {
+    if (dryRun || ['swipe', 'regenerate', 'continue', 'quiet', 'impersonate'].includes(type)) {
+        return;
+    }
+
+    for (let i = 0; i < chat.length; i++) {
+        const narrator = chat[i].extra?.[PENDING_GHOST_KEY];
+
+        if (!narrator) {
+            continue;
+        }
+
+        delete chat[i].extra[PENDING_GHOST_KEY];
+        // The answer only if it is still the narrator's, right after the ask.
+        const end = chat[i + 1]?.original_avatar === narrator ? i + 1 : i;
+        await hideChatMessageRange(i, end, false);
+    }
+}
+
+/** Starts ghosting narrator-answered OOC exchanges as the chat moves on. */
+export function watchOocGhosting() {
+    eventSource.on(event_types.GENERATION_STARTED, ghostPendingOoc);
+}
+
+/**
  * Sends an OOC line through the message box, as Quick Reply does, and — with
- * the Ghost toggle on — ghosts the exchange once the reply has landed.
+ * the Ghost toggle on — ghosts the exchange once the reply has landed. Goes to
+ * the narrator instead when the open group has one.
  * @param {string} oocLine
  * @returns {Promise<void>}
  */
 async function runOocTurn(oocLine) {
+    const narrator = getOocNarrator();
+
+    if (narrator) {
+        await runNarratorOocTurn(oocLine, narrator);
+        return;
+    }
+
     const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
     const sendButton = /** @type {HTMLElement} */ (document.getElementById('send_but'));
 

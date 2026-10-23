@@ -3,6 +3,7 @@
  */
 import { debounce, escapeHtml, getSTContext, isActivationKey, isEditableTarget } from './util.js';
 import { focusedAvatar, mountInStrip, pruneStrip } from './panel.js';
+import { isNarrator } from './narrator.js';
 
 const extensionName = "CharImgViewer";
 const settingsKey = "charImgViewer";
@@ -80,7 +81,8 @@ function getActiveCharacters(ctx) {
   const allCharacters = ctx.characters || [];
 
   if (ctx.groupId) {
-    const members = findGroup(ctx)?.members;
+    // The narrator has no images of its own; its turns fall through to the group.
+    const members = findGroup(ctx)?.members?.filter((avatar) => !isNarrator(avatar));
     if (!Array.isArray(members)) return [];
 
     // Show one member's images rather than the whole group's: a roster pin wins,

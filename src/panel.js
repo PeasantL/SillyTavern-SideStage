@@ -10,6 +10,7 @@ import { GROUP_LAYOUT_KEY, getActiveLayout, getActiveStage, getGroupWorld, pullW
 import { applyLayoutMutes, forceTurn, getEffectiveNote, isNoteApplied, moveInOrOut, setNoteApplied, syncNoteToChat } from './scene.js';
 import { renderSettings, resetSettingsGroup } from './drawer.js';
 import { refocusViewer } from './images.js';
+import { isNarrator } from './narrator.js';
 
 const PANEL_ID = 'groupRoster';
 /**
@@ -321,7 +322,8 @@ export function refreshPanel() {
 
     const group = getCurrentGroup();
     const world = group ? getGroupWorld(group.id) : '';
-    const cards = group?.members ?? [];
+    // The narrator is a member only to answer the asides: it has no place in the roster.
+    const cards = (group?.members ?? []).filter(avatar => !isNarrator(avatar));
     list.innerHTML = '';
 
     const status = document.getElementById('groupRosterStatus');
