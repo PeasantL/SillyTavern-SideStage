@@ -6,7 +6,7 @@ import { extension_settings } from '../../../../extensions.js';
 const MODULE_NAME = 'groupRoster';
 export const rosterDefaults = {
     /**
-     * Whether an OOC / Morality / Scene exchange is ghosted once it lands —
+     * Whether an OOC / Morality / Scene exchange is ghosted once the next ordinary turn starts —
      * ST's own "Exclude message from prompts" — so it stays on screen but
      * never reaches a later reply. Toggled from the button row.
      * @type {boolean}

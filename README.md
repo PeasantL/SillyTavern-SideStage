@@ -84,9 +84,10 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 - **Scene**: The same aside, asking for a description of the scene as it
   stands. Nothing to type; the wording is editable in the settings drawer.
 - **Ghost**: A toggle at the right end of the row. While it is on, both halves
-  of an aside are ghosted once they land — ST's own *Exclude message from
-  prompts* — so the exchange stays on screen but never reaches a later reply.
-  Turn it off to let the asides count as ordinary chat.
+  of an aside are ghosted when your next ordinary turn starts — ST's own
+  *Exclude message from prompts* — so the exchange stays on screen but never
+  reaches a later reply. Until then the answer can still be swiped. Turn it
+  off to let the asides count as ordinary chat.
 - **Which AI**: For the rewrites and spell check, the connection profile
   selected in SillyTavern's Connection Manager, or the active connection when
   none is selected. The asides are normal sends, so they use the active

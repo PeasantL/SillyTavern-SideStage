@@ -672,16 +672,18 @@ async function runSpellCheck() {
  * In a group with a member named in the "Answered by" setting, that member
  * answers instead, as a forced turn: a swipe then regenerates as them, since
  * a group swipe goes to whoever spoke last.
+ *
+ * Either way, the Ghost toggle works the same: see PENDING_GHOST_KEY.
  */
 
-// How long a turn may take before the Ghost toggle stops waiting on it.
+// How long a turn may take before the aside stops waiting on it.
 const OOC_TURN_TIMEOUT = 10 * 60 * 1000;
 
 /**
- * Set on a narrator-answered ask (to the narrator's avatar) while the exchange
- * waits to be ghosted. Ghosting it at once would break the swipe: a hidden
- * reply swipes as an earlier speaker, and the hidden ask is left out of the
- * prompt. So it is ghosted when the next ordinary turn starts instead.
+ * Set on an aside's ask while its exchange waits to be ghosted. Ghosting it
+ * as soon as the answer lands would break the swipe: a hidden reply swipes as
+ * an earlier speaker, and the hidden ask is left out of the prompt. So it is
+ * ghosted when the next ordinary turn starts instead (ghostPendingOoc()).
  */
 const PENDING_GHOST_KEY = 'sidestage_ooc_ghost';
 
@@ -705,39 +707,53 @@ function getOocNarrator() {
 }
 
 /**
- * Has the narrator answer an OOC line as a forced turn. With the Ghost toggle
- * on, the ask is marked so ghostPendingOoc() hides the exchange later.
- * @param {string} oocLine
+ * Has the narrator answer an OOC line as a forced turn.
+ * @param {HTMLTextAreaElement} textarea
+ * @param {string} line
  * @param {string} narrator Avatar of the group member who answers
  * @returns {Promise<void>}
  */
-async function runNarratorOocTurn(oocLine, narrator) {
-    const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
+async function askNarrator(textarea, line, narrator) {
+    // forceTurn() posts what is in the box as the user's turn, then generates.
+    textarea.value = line;
+    await forceTurn(narrator);
+}
 
-    if (!textarea) {
+/**
+ * Sends an OOC line as a Quick Reply does, and waits for whoever the chat
+ * picks to finish answering.
+ * @param {HTMLTextAreaElement} textarea
+ * @param {string} line
+ * @param {number} askMessageId Where the ask lands
+ * @returns {Promise<void>}
+ */
+async function askAsQuickReply(textarea, line, askMessageId) {
+    const sendButton = /** @type {HTMLElement} */ (document.getElementById('send_but'));
+
+    if (!sendButton) {
         return;
     }
 
-    const askMessageId = chat.length;
+    textarea.value = line;
+    textarea.focus();
+    sendButton.click();
 
-    // forceTurn() posts what is in the box as the user's turn, then generates.
-    textarea.value = substituteParams(oocLine);
-    await forceTurn(narrator);
-
-    const ask = chat[askMessageId];
-
-    if (getSettings().oocGhost && ask?.is_user) {
-        ask.extra ??= {};
-        ask.extra[PENDING_GHOST_KEY] = narrator;
-        await saveChatConditional();
+    try {
+        await waitUntilCondition(() => isGenerating() || chat.length > askMessageId, 10000, 50);
+        await waitUntilCondition(() => !isGenerating(), OOC_TURN_TIMEOUT, 200);
+    } catch {
+        // Gave up waiting: the exchange is marked as it stands.
     }
 }
 
 /**
- * Ghosts the narrator-answered exchanges still waiting, once a turn that moves
- * the chat on starts. Swipes, regenerations and continues of the answer leave
- * them be, and so do quiet and impersonate calls. GENERATION_STARTED fires
- * before the prompt is built, so the exchange is already out of it.
+ * Ghosts the exchanges still waiting, once a turn that moves the chat on
+ * starts: each ask and the replies right after it, up to the next message of
+ * the user's. Swipes, regenerations and continues of an answer leave them be,
+ * and so do quiet and impersonate calls. GENERATION_STARTED fires before the
+ * prompt is built, so the exchange is already out of it. Ghosting is "Exclude
+ * message from prompts", as the mes_hide button sets it: on screen, never in
+ * a later reply.
  * @param {string} type
  * @param {object} _params
  * @param {boolean} dryRun
@@ -749,69 +765,56 @@ async function ghostPendingOoc(type, _params, dryRun) {
     }
 
     for (let i = 0; i < chat.length; i++) {
-        const narrator = chat[i].extra?.[PENDING_GHOST_KEY];
-
-        if (!narrator) {
+        if (!chat[i].extra?.[PENDING_GHOST_KEY]) {
             continue;
         }
 
         delete chat[i].extra[PENDING_GHOST_KEY];
-        // The answer only if it is still the narrator's, right after the ask.
-        const end = chat[i + 1]?.original_avatar === narrator ? i + 1 : i;
+
+        let end = i;
+        while (chat[end + 1] && !chat[end + 1].is_user && !chat[end + 1].extra?.[PENDING_GHOST_KEY]) {
+            end++;
+        }
+
         await hideChatMessageRange(i, end, false);
     }
 }
 
-/** Starts ghosting narrator-answered OOC exchanges as the chat moves on. */
+/** Starts ghosting OOC exchanges as the chat moves on. */
 export function watchOocGhosting() {
     eventSource.on(event_types.GENERATION_STARTED, ghostPendingOoc);
 }
 
 /**
- * Sends an OOC line through the message box, as Quick Reply does, and — with
- * the Ghost toggle on — ghosts the exchange once the reply has landed. Goes to
- * the narrator instead when the open group has one.
+ * Asks an OOC line: of the narrator when the open group has one, otherwise as
+ * a Quick Reply. With the Ghost toggle on, the ask is then marked so the
+ * exchange is ghosted once the chat moves on.
  * @param {string} oocLine
  * @returns {Promise<void>}
  */
 async function runOocTurn(oocLine) {
+    const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
+
+    if (!textarea) {
+        return;
+    }
+
+    const askMessageId = chat.length;
+    const line = substituteParams(oocLine);
     const narrator = getOocNarrator();
 
     if (narrator) {
-        await runNarratorOocTurn(oocLine, narrator);
-        return;
+        await askNarrator(textarea, line, narrator);
+    } else {
+        await askAsQuickReply(textarea, line, askMessageId);
     }
 
-    const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
-    const sendButton = /** @type {HTMLElement} */ (document.getElementById('send_but'));
+    const ask = chat[askMessageId];
 
-    if (!textarea || !sendButton) {
-        return;
-    }
-
-    // The ask lands at the end of the chat, and whatever answers it after.
-    const askMessageId = chat.length;
-
-    textarea.value = substituteParams(oocLine);
-    textarea.focus();
-    sendButton.click();
-
-    if (!getSettings().oocGhost) {
-        return;
-    }
-
-    // With the Ghost toggle on, the whole exchange is ghosted — the same
-    // "Exclude message from prompts" state the mes_hide button sets — so it
-    // stays visible but never bleeds into a later reply.
-    try {
-        await waitUntilCondition(() => isGenerating() || chat.length > askMessageId, 10000, 50);
-        await waitUntilCondition(() => !isGenerating(), OOC_TURN_TIMEOUT, 200);
-    } catch {
-        return;
-    }
-
-    if (chat.length > askMessageId) {
-        await hideChatMessageRange(askMessageId, chat.length - 1, false);
+    if (getSettings().oocGhost && ask?.is_user) {
+        ask.extra ??= {};
+        ask.extra[PENDING_GHOST_KEY] = true;
+        await saveChatConditional();
     }
 }
 
@@ -911,12 +914,12 @@ export function mountAssistBar() {
         actions.append(button);
     }
 
-    // Whether the OOC / Morality / Scene exchanges are ghosted once they land.
+    // Whether the OOC / Morality / Scene exchanges are ghosted once the chat moves on.
     // Same markup as the panel's Author's Note toggle, so it lights the same way.
     const ghost = document.createElement('label');
     ghost.id = 'sidestageGhostToggle';
     ghost.classList.add('gr-footer-btn', 'gr-footer-toggle', 'gr-footer-action');
-    ghost.title = t`Exclude the OOC, Morality and Scene exchanges from prompts once they land, so they stay on screen but never reach a later reply`;
+    ghost.title = t`Exclude the OOC, Morality and Scene exchanges from prompts once your next ordinary turn starts, so they stay on screen (and can be swiped until then) but never reach a later reply`;
 
     const ghostInput = document.createElement('input');
     ghostInput.type = 'checkbox';

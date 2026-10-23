@@ -93,7 +93,7 @@ const settingsHtml = `
                 <small class="ss-settings-hint">Each is sent as <code>[OOC: Pause the roleplay and respond out of character. …]</code> through the message box, like a Quick Reply. Blank restores the default.</small>
                 <label for="ss_ooc_narrator">Answered by</label>
                 <input id="ss_ooc_narrator" class="text_pole" type="text" placeholder="Narrator">
-                <small class="ss-settings-hint">The group member who answers OOC, Morality and Scene as a turn of their own, so swiping the answer asks them again. Muted, they still answer, and stay out of ordinary rounds. With Ghost on, the exchange is ghosted once the next ordinary turn starts, so it can be swiped until then. With no member by that name, SideStage's own narrator answers: a hidden card kept, muted, in every world's group. Blank, and whoever the group picks answers.</small>
+                <small class="ss-settings-hint">The group member who answers OOC, Morality and Scene as a turn of their own, so swiping the answer asks them again. Muted, they still answer, and stay out of ordinary rounds. With no member by that name, SideStage's own narrator answers: a hidden card kept, muted, in every world's group. Blank, and whoever the group picks answers.</small>
             </div>
 
             <div class="ss-settings-divider"></div>
