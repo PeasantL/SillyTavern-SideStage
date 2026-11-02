@@ -1,8 +1,8 @@
 /**
- * Solo chats with a world's card: the roster shows the world's cast, and inviting one of them carries the
- * chat on as a new chat of the world's group, instead of SillyTavern's "Convert to group" making a new group.
+ * Solo chats with a world's card: the roster shows the world's cast, and inviting one of them moves the
+ * chat into a new chat of the world's group, instead of SillyTavern's "Convert to group" making a new group.
  */
-import { characters, this_chid, chat, chat_metadata, getThumbnailUrl, getRequestHeaders, setActiveGroup, isGenerating, Generate, getCurrentChatId, system_message_types } from '../../../../../script.js';
+import { characters, this_chid, chat, chat_metadata, getThumbnailUrl, getRequestHeaders, setActiveGroup, isGenerating, Generate, getCurrentChatId, deleteCharacterChatByName, system_message_types } from '../../../../../script.js';
 import { selected_group, editGroup, openGroupById } from '../../../../group-chats.js';
 import { humanizedDateTime } from '../../../../RossAscends-mods.js';
 import { compressRequest } from '../../../../request-compression.js';
@@ -75,10 +75,11 @@ function toGroupMessages(character) {
 }
 
 /**
- * Invites a world member into the open solo chat: the chat is copied into a new chat of the world's group
- * (the solo chat stays as it was), with only its card in the scene, that chat is opened, and the guest
- * enters as the roster's first toggle brings anyone in (moveInOrOut()). Anything typed in the message box
- * is posted there, ahead of the entrance, and never to the solo chat.
+ * Invites a world member into the open solo chat: the chat moves into a new chat of the world's group,
+ * with only its card in the scene, that chat is opened, and the guest enters as the roster's first toggle
+ * brings anyone in (moveInOrOut()). Anything typed in the message box is posted there, ahead of the
+ * entrance. The solo chat is deleted only once the group's copy is saved and open, so a move that fails
+ * on the way leaves it where it was.
  * @param {string} avatar The guest's avatar file name
  * @returns {Promise<boolean>} Whether the chat was carried on in the group
  */
@@ -113,7 +114,9 @@ export async function inviteToWorldGroup(avatar) {
     const metadata = structuredClone(chat_metadata);
     delete metadata.main_chat;
     metadata.integrity = uuidv4();
-    metadata[SOLO_ORIGIN_KEY] = { avatar: character.avatar, chat: getCurrentChatId() };
+    const soloChat = getCurrentChatId();
+    const chid = String(characters.indexOf(character));
+    metadata[SOLO_ORIGIN_KEY] = { avatar: character.avatar, chat: soloChat };
 
     const header = { chat_metadata: metadata, user_name: 'unused', character_name: 'unused' };
     const response = await fetch('/api/chats/group/save', await compressRequest({
@@ -146,6 +149,15 @@ export async function inviteToWorldGroup(avatar) {
     }
 
     setTyped(textarea, typed);
+
+    try {
+        // Also points the card at another of its chats when this was the one it last used.
+        await deleteCharacterChatByName(chid, soloChat);
+    } catch (error) {
+        console.error('[SideStage] Could not delete the solo chat', error);
+        toastr.warning(t`The solo chat "${soloChat}" could not be deleted. Delete it from ${character.name}'s chats.`);
+    }
+
     return moveInOrOut(avatar, true);
 }
 
