@@ -11,8 +11,8 @@
  * their merge), settings, util, worlds (world groups and catching up with the
  * Character Editor), scene (mutes, openings, turns, Author's Note), rewrite
  * (the button row), panel (the strip and roster), drawer (settings), images,
- * tablet, lock (the Character Editor lock) and narrator (the hidden card that
- * answers the asides).
+ * tablet, lock (the Character Editor lock), solo (a world card's solo chat
+ * and inviting into it) and narrator (the hidden card that answers the asides).
  */
 import { eventSource, event_types } from '../../../../script.js';
 import { applyEditorLinks, getSettings } from './src/settings.js';

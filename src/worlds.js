@@ -11,7 +11,7 @@ import { t } from '../../../../i18n.js';
 import { getLayoutEntry, mergeStage, normalizeStage, stageRev } from './stage.js';
 import { debounce, getCurrentGroup } from './util.js';
 import { refreshGroupControlPanel } from './scene.js';
-import { refreshPanel } from './panel.js';
+import { openPanelForSolo, refreshPanel } from './panel.js';
 import { renderSettings } from './drawer.js';
 import { applyLock } from './lock.js';
 import { ensureNarratorCard, getNarratorAvatar } from './narrator.js';
@@ -118,6 +118,17 @@ export function getGroupWorld(groupId) {
 /** @returns {string} The lorebook a character links, or ''. */
 function getCharacterWorld(character) {
     return String(character?.data?.extensions?.world ?? '');
+}
+
+/**
+ * The group of the world a card belongs to.
+ * @param {object} character
+ * @returns {object|null} Null for a card in no world, or a world with no group yet.
+ */
+export function getWorldGroupOf(character) {
+    const world = getCharacterWorld(character);
+    const groupId = world ? worldLorebooks.get(world) ?? '' : '';
+    return (groupId && groups.find(x => x.id === groupId)) || null;
 }
 
 /**
@@ -438,6 +449,8 @@ export function refreshWorlds({ reload = false } = {}) {
         return refreshingWorlds;
     }
 
+    const first = !worldsResolved;
+
     refreshingWorlds = (async () => {
         try {
             if (reload) {
@@ -458,6 +471,10 @@ export function refreshWorlds({ reload = false } = {}) {
             renderSettings();
             refreshPanel();
             applyLock();
+            // A solo chat opened before the worlds were known gets its roster now.
+            if (first) {
+                openPanelForSolo();
+            }
         }
     })();
 

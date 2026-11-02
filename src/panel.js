@@ -11,6 +11,7 @@ import { applyLayoutMutes, forceTurn, getEffectiveNote, isNoteApplied, moveInOrO
 import { renderSettings, resetSettingsGroup } from './drawer.js';
 import { refocusViewer } from './images.js';
 import { isNarrator } from './narrator.js';
+import { getSoloScene, inviteToWorldGroup, soloTurn } from './solo.js';
 
 const PANEL_ID = 'groupRoster';
 /**
@@ -116,13 +117,17 @@ function closePanel() {
 
 /**
  * Builds one compact card row: avatar, name, and the two inline icon toggles.
+ * In a world card's solo chat (`solo`), only that card is in the scene, and
+ * bringing anyone else in invites them: the chat carries on in the world's group.
  * @param {string} avatar Avatar file name
+ * @param {{character: object, group: object}|null} [solo] The solo chat's scene (getSoloScene())
  * @returns {HTMLElement}
  */
-function makeCardRow(avatar) {
+function makeCardRow(avatar, solo = null) {
     const character = getCharacterByAvatar(avatar);
     const group = getCurrentGroup();
-    const isMuted = Boolean(group?.disabled_members?.includes(avatar));
+    const isHost = Boolean(solo && solo.character.avatar === avatar);
+    const isMuted = solo ? !isHost : Boolean(group?.disabled_members?.includes(avatar));
 
     const row = document.createElement('div');
     row.classList.add('gr-card');
@@ -191,17 +196,21 @@ function makeCardRow(avatar) {
 
     // Toggle 1: in the scene (unmuted) or muted. Bringing someone in or
     // sending them off plays out in the chat (moveInOrOut()).
-    const member = makeIconToggle('gr-member', 'fa-user-check', isMuted
-        ? t`Out of the scene. Click to bring them in: the narrator says they entered, then they speak`
-        : t`In the scene. Click to send them off: they speak, then the narrator says they left`);
+    const member = makeIconToggle('gr-member', 'fa-user-check', isHost
+        ? t`This is their chat`
+        : solo
+            ? t`Invite them: this chat carries on as a new chat of the "${solo.group.name}" group, where they enter the scene. This solo chat stays as it is`
+            : isMuted
+                ? t`Out of the scene. Click to bring them in: the narrator says they entered, then they speak`
+                : t`In the scene. Click to send them off: they speak, then the narrator says they left`);
     member.input.checked = !isMuted;
-    member.input.disabled = !group || !character;
+    member.input.disabled = !(group || solo) || !character || isHost;
     member.input.addEventListener('change', async () => {
         const inScene = member.input.checked;
         member.input.disabled = true;
         row.classList.add('gr-speaking');
         try {
-            const moved = await moveInOrOut(avatar, inScene);
+            const moved = solo ? await inviteToWorldGroup(avatar) : await moveInOrOut(avatar, inScene);
             if (!moved) {
                 member.input.checked = !inScene;
             }
@@ -219,17 +228,19 @@ function makeCardRow(avatar) {
 
     // Toggle 2: force a turn (self-resets once generation finishes). Only for
     // members in the scene: a muted character is greyed out until unmuted.
-    const turn = makeIconToggle('gr-turn', 'fa-comment-dots', isMuted
-        ? t`Muted: bring into the scene to give them a turn`
-        : t`Make this character speak next`);
-    turn.input.disabled = !group || !character || isMuted;
+    const turn = makeIconToggle('gr-turn', 'fa-comment-dots', solo && !isHost
+        ? t`Invite them first to give them a turn`
+        : isMuted
+            ? t`Muted: bring into the scene to give them a turn`
+            : t`Make this character speak next`);
+    turn.input.disabled = !(group || solo) || !character || isMuted;
     turn.input.addEventListener('change', async () => {
         if (!turn.input.checked) {
             return;
         }
         row.classList.add('gr-speaking');
         try {
-            await forceTurn(avatar);
+            await (isHost ? soloTurn() : forceTurn(avatar));
         } catch (error) {
             console.error('[Group Roster] Failed to force a turn', error);
             toastr.error(error?.message || t`Unknown error`, t`Failed to force a turn`);
@@ -310,7 +321,9 @@ function refreshLayoutPicker() {
     picker.value = getActiveLayout(getCurrentGroup()?.id)?.id ?? '';
     picker.disabled = !stage;
     $('#groupRosterLayoutEdit').toggleClass('ss-no-stage', !stage);
-    picker.title = stage || !getCurrentGroup() ? '' : t`Layouts are for worlds' groups`;
+    picker.title = stage ? ''
+        : getSoloScene() ? t`Layouts open the world group's chats: invite someone to carry this chat on there`
+        : getCurrentGroup() ? t`Layouts are for worlds' groups` : '';
 }
 
 /** Re-renders the card list inside an already open panel. */
@@ -321,16 +334,21 @@ export function refreshPanel() {
     }
 
     const group = getCurrentGroup();
-    const world = group ? getGroupWorld(group.id) : '';
+    // A world card's solo chat shows its world's group, with only that card in the scene.
+    const solo = group ? null : getSoloScene();
+    const shown = group ?? solo?.group ?? null;
+    const world = shown ? getGroupWorld(shown.id) : '';
     // The narrator is a member only to answer the asides: it has no place in the roster.
-    const cards = (group?.members ?? []).filter(avatar => !isNarrator(avatar));
+    const cards = (shown?.members ?? []).filter(avatar => !isNarrator(avatar));
     list.innerHTML = '';
 
     const status = document.getElementById('groupRosterStatus');
     if (status) {
-        status.textContent = group ? group.name : t`No group chat open`;
-        status.title = world ? t`Members follow the world "${world}"` : '';
-        status.classList.toggle('gr-warning', !group);
+        status.textContent = group ? group.name : solo ? t`${solo.group.name} · solo chat` : t`No group chat open`;
+        status.title = solo
+            ? t`${solo.character.name}'s own chat. Invite someone to carry it on in the "${solo.group.name}" group`
+            : world ? t`Members follow the world "${world}"` : '';
+        status.classList.toggle('gr-warning', !shown);
     }
 
     const sync = document.getElementById('groupRosterSync');
@@ -350,13 +368,13 @@ export function refreshPanel() {
     if (!cards.length) {
         const empty = document.createElement('div');
         empty.classList.add('gr-empty');
-        empty.textContent = group ? t`This group has no members.` : t`Open a group chat.`;
+        empty.textContent = shown ? t`This group has no members.` : t`Open a group chat.`;
         list.appendChild(empty);
         return;
     }
 
     for (const avatar of cards) {
-        list.appendChild(makeCardRow(avatar));
+        list.appendChild(makeCardRow(avatar, solo));
     }
 }
 
@@ -416,10 +434,11 @@ function openPanel() {
         }
         e.preventDefault();
         const group = getCurrentGroup();
-        const world = group ? getGroupWorld(group.id) : '';
+        const shown = group ?? getSoloScene()?.group;
+        const world = shown ? getGroupWorld(shown.id) : '';
 
         if (world) {
-            openInEditor({ world, layout: getActiveLayout(group.id)?.id ?? '' });
+            openInEditor({ world, layout: group ? getActiveLayout(group.id)?.id ?? '' : '' });
         }
     });
 
@@ -436,9 +455,10 @@ function openPanel() {
 
 
 /**
- * Opens the roster when a group chat is selected and closes it otherwise, so
- * the window follows the chat rather than lingering over a solo character.
- * The wand button still toggles it by hand within a group.
+ * Opens the roster when a group chat or a world card's solo chat is selected
+ * and closes it otherwise, so the window follows the chat rather than
+ * lingering over a solo character outside the worlds. The wand button still
+ * toggles it by hand.
  */
 export function syncPanelToChat() {
     focusedAvatar = null;
@@ -454,7 +474,13 @@ export function syncPanelToChat() {
     }
 
     if (!selected_group) {
-        closePanel();
+        if (!getSoloScene()) {
+            closePanel();
+        } else if (isPanelOpen()) {
+            refreshPanel();
+        } else {
+            openPanel();
+        }
         return;
     }
 
@@ -471,6 +497,13 @@ export function syncPanelToChat() {
     }
 
     openPanel();
+}
+
+/** Opens the roster over a world card's solo chat, if it isn't open already. */
+export function openPanelForSolo() {
+    if (getSoloScene() && !isPanelOpen()) {
+        openPanel();
+    }
 }
 
 export function addWandButton() {

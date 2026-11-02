@@ -9,7 +9,8 @@ import { waitUntilCondition } from '../../../../utils.js';
 import { t } from '../../../../i18n.js';
 import { getLayoutEntry, getLayoutOrder, getTurnText } from './stage.js';
 import { getCharacterByAvatar, getCurrentGroup } from './util.js';
-import { getActiveLayout, getActiveStage, getGroupWorld } from './worlds.js';
+import { getActiveLayout, getActiveStage, getGroupWorld, getStage } from './worlds.js';
+import { getSoloScene } from './solo.js';
 import { refreshPanel } from './panel.js';
 import { getSettings, rosterDefaults } from './settings.js';
 
@@ -514,11 +515,16 @@ function setChatAuthorsNote(text) {
 
 /**
  * The note the footer toggle applies: the selected layout's, falling back to
- * the group's. A layout's note is an override for one scene, so a blank one
+ * the group's (in a world card's solo chat, its world group's). A layout's note is an override for one scene, so a blank one
  * means "use the group's" rather than "no note".
  * @returns {string}
  */
 export function getEffectiveNote() {
+    // A solo chat with a world's card takes the world group's own note: layouts are for its group chats.
+    if (!getCurrentGroup()) {
+        return getStage(getSoloScene()?.group.id)?.note || '';
+    }
+
     return getActiveLayout(getCurrentGroup()?.id)?.note || getActiveStage()?.note || '';
 }
 
