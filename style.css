@@ -973,33 +973,38 @@ body.ss-lock-group :is(#rm_group_delete, #rm_group_members [data-action="remove"
 
 /* Not pointer-events: none on the buttons themselves, so the not-allowed cursor shows; index.js stops the click. */
 
-/* Managed by the Character Editor: nothing locked is greyed out, so it all
-   stays readable. Text fields are read-only (they can still be selected,
-   copied and scrolled); toggles and selects are disabled, which SillyTavern
-   and the browsers dim, so that is undone here. What marks them is a dashed
-   border, the tooltip and the notice at the top (.ss-lock-notice). The
-   expanded (⛶) editor of a locked field looks the same. */
+/* Managed by the Character Editor: locked fields are muted, not greyed out,
+   so they stay readable. Text fields are read-only (they can still be
+   selected, copied and scrolled); toggles and selects are disabled, which
+   SillyTavern and the browsers dim to near-unreadable, so that is undone and
+   the muting below used instead: the text a step towards the theme's
+   emphasis colour, on a darker background. The tooltip and the notice at the
+   top (.ss-lock-notice) say why. The expanded (⛶) editor of a locked field
+   looks the same. */
+:root {
+    --ss-locked-text: color-mix(in srgb, var(--SmartThemeBodyColor) 50%, var(--SmartThemeEmColor));
+    --ss-locked-bg: var(--black50a, rgba(0, 0, 0, 0.5));
+}
+
 :is(textarea, select, input:not([type="checkbox"], [type="radio"], [type="range"]))[data-ss-locked],
 .maximized_textarea.ss-locked-field {
     filter: none;
     opacity: 1;
-    color: var(--SmartThemeBodyColor);
-    -webkit-text-fill-color: var(--SmartThemeBodyColor);
-    border-style: dashed !important;
+    color: var(--ss-locked-text);
+    -webkit-text-fill-color: var(--ss-locked-text);
+    background-color: var(--ss-locked-bg);
 }
 
 :is(select, input)[data-ss-locked="disabled"] {
     cursor: not-allowed;
 }
 
-/* Checkboxes, radios and sliders: their state in full colour, outlined dashed. */
+/* Checkboxes, radios and sliders: their state, muted like the text. */
 input:is([type="checkbox"], [type="radio"], [type="range"])[data-ss-locked] {
     filter: none;
-    opacity: 1;
-    color: var(--SmartThemeBodyColor);
+    opacity: 0.75;
+    color: var(--ss-locked-text);
     cursor: not-allowed;
-    outline: 1px dashed var(--SmartThemeBorderColor);
-    outline-offset: 2px;
 }
 
 /* A world entry's on/off switch shows its state: not greyed, only not clickable. */
@@ -1024,18 +1029,17 @@ body.ss-lock-card #ss_card_lock_notice {
 /* The entries' multi-selects (Filter to Characters or Tags, Filter to
    Generation Triggers) are select2 boxes: disabled, select2 paints them its
    own light grey (#eee) over the theme, and the theme's light text on it
-   can't be read. Locked, they keep the theme's look with the dashed border. */
+   can't be read. Locked, they are muted like the other fields. */
 body.ss-lock-world #world_popup_entries_list .select2-container--disabled :is(.select2-selection--multiple, .select2-selection--single) {
-    background-color: var(--black30a);
-    color: var(--SmartThemeBodyColor);
-    border-style: dashed !important;
+    background-color: var(--ss-locked-bg);
+    color: var(--ss-locked-text);
     cursor: not-allowed;
 }
 
-body.ss-lock-world #world_popup_entries_list .select2-container--disabled :is(.select2-search__field, .select2-selection__rendered, .select2-selection__placeholder) {
+body.ss-lock-world #world_popup_entries_list .select2-container--disabled :is(.select2-search__field, .select2-selection__rendered, .select2-selection__placeholder, .select2-selection__choice__display) {
     background-color: transparent;
-    color: var(--SmartThemeBodyColor);
-    -webkit-text-fill-color: var(--SmartThemeBodyColor);
+    color: var(--ss-locked-text);
+    -webkit-text-fill-color: var(--ss-locked-text);
     filter: none;
     opacity: 1;
     cursor: not-allowed;

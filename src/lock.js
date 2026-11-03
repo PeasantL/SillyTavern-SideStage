@@ -59,7 +59,7 @@ function isTextField(el) {
  * Locks a field, or lets it go. Text is made read-only, so it can still be
  * read, selected, copied and scrolled at full colour; toggles and selects,
  * which have no read-only state, are disabled (style.css keeps them in full
- * colour). Either way it is marked (`data-ss-locked`, dashed in style.css) and
+ * colour). Either way it is marked (`data-ss-locked`, muted in style.css) and
  * its tooltip says who manages it. A field SillyTavern itself made read-only or
  * disabled is left as it is.
  * @param {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} el
@@ -440,11 +440,11 @@ export function watchLock() {
     }
 
     // Like SillyTavern's own notice over Advanced Formatting's locked options; shown by style.css (ss-lock-world,
-    // ss-lock-card). The dashed fields under them can be read and copied, not changed.
+    // ss-lock-card). The muted fields under them can be read and copied, not changed.
     $('#WorldInfo > .flex-container').first().after(`
         <div id="ss_world_lock_notice" class="info-block info ss-lock-notice">
             <i class="fa-solid fa-lock"></i>
-            <span>${t`This lorebook is a world, managed by the Character Editor: the dashed fields are read-only here.`}</span>
+            <span>${t`This lorebook is a world, managed by the Character Editor: its fields are read-only here.`}</span>
             <a id="ss_world_lock_open" class="ss-editor-link" href="#">${t`Edit it there`}</a>
         </div>`);
     $('#ss_world_lock_open').on('click', (e) => {
@@ -454,7 +454,7 @@ export function watchLock() {
     $('#descriptionWrapper').first().before(`
         <div id="ss_card_lock_notice" class="info-block info ss-lock-notice">
             <i class="fa-solid fa-lock"></i>
-            <span>${t`This card is managed by the Character Editor: the dashed fields are read-only here.`}</span>
+            <span>${t`This card is managed by the Character Editor: its fields are read-only here.`}</span>
             <a id="ss_card_lock_open" class="ss-editor-link" href="#">${t`Edit it there`}</a>
         </div>`);
     $('#ss_card_lock_open').on('click', (e) => {
