@@ -988,6 +988,32 @@ body.ss-lock-group :is(#rm_group_delete, #rm_group_members [data-action="remove"
     border-style: dashed;
 }
 
+/* The entries' multi-selects (Filter to Characters or Tags, Filter to
+   Generation Triggers) are select2 boxes: disabled, select2 paints them its
+   own light grey (#eee) over the theme, and the theme's light text on it
+   can't be read. Locked, they keep the theme's look with the dashed border. */
+body.ss-lock-world #world_popup_entries_list .select2-container--disabled :is(.select2-selection--multiple, .select2-selection--single) {
+    background-color: var(--black30a);
+    color: var(--SmartThemeBodyColor);
+    border-style: dashed !important;
+    cursor: not-allowed;
+}
+
+body.ss-lock-world #world_popup_entries_list .select2-container--disabled :is(.select2-search__field, .select2-selection__rendered, .select2-selection__placeholder) {
+    background-color: transparent;
+    color: var(--SmartThemeBodyColor);
+    -webkit-text-fill-color: var(--SmartThemeBodyColor);
+    filter: none;
+    opacity: 1;
+    cursor: not-allowed;
+}
+
+body.ss-lock-world #world_popup_entries_list .select2-container--disabled .select2-search__field::placeholder {
+    color: var(--SmartThemeEmColor);
+    -webkit-text-fill-color: var(--SmartThemeEmColor);
+    opacity: 1;
+}
+
 /* The notice atop the World Info editor, only while it has a world open. */
 #ss_world_lock_notice {
     display: none;
