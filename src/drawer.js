@@ -61,7 +61,7 @@ const settingsHtml = `
                     </div>
                 </div>
                 <div class="flex-container alignItemsCenter">
-                    <small class="ss-settings-hint flex1">The group's Author's Note and layouts are written in the Character Editor's World section.</small>
+                    <small class="ss-settings-hint flex1">The group's Author's Note and layouts are written in the Character Editor's World tab.</small>
                     <div id="gr_world_open" class="menu_button menu_button_icon interactable ss-editor-link" title="Open this world in the Character Editor">
                         <i class="fa-solid fa-pen-to-square fa-fw"></i>
                     </div>

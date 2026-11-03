@@ -17,7 +17,7 @@
 import { eventSource, event_types } from '../../../../script.js';
 import { applyEditorLinks, getSettings } from './src/settings.js';
 import { getSTContext } from './src/util.js';
-import { onBackToTab, refreshWorlds, renameInStages, syncWorldGroupsSoon } from './src/worlds.js';
+import { catchUpAfterReply, onBackToTab, refreshWorlds, renameInStages, syncWorldGroupsSoon } from './src/worlds.js';
 import { applyLayoutGreeting, openSceneFromLayout, quietOtherGreetingPickers, watchManualNoteEdits } from './src/scene.js';
 import { mountAssistBar, watchOocGhosting } from './src/rewrite.js';
 import { addWandButton, refreshPanel, syncPanelToChat, watchStrip } from './src/panel.js';
@@ -55,6 +55,12 @@ jQuery(async () => {
     document.addEventListener('visibilitychange', onBackToTab);
     // Two windows side by side never change visibility: coming back is a focus.
     window.addEventListener('focus', onBackToTab);
+    // Coming back while a reply was being written leaves the catch-up until it is done.
+    for (const type of [event_types.GENERATION_ENDED, event_types.GENERATION_STOPPED, event_types.GROUP_WRAPPER_FINISHED]) {
+        if (type) {
+            eventSource.on(type, catchUpAfterReply);
+        }
+    }
     // A card's world can change in ST too (and a deleted card leaves its world).
     eventSource.on(event_types.CHARACTER_EDITED, syncWorldGroupsSoon);
     eventSource.on(event_types.CHARACTER_DELETED, syncWorldGroupsSoon);

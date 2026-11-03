@@ -552,7 +552,7 @@ export function setNoteApplied(shouldApply) {
     const note = getEffectiveNote();
 
     if (shouldApply && !note) {
-        toastr.info(t`This group has no Author's Note. Write one in the Character Editor's World section.`);
+        toastr.info(t`This group has no Author's Note. Write one in the Character Editor's World tab.`);
         refreshPanel();
         return;
     }

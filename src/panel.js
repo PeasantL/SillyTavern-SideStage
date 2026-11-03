@@ -175,6 +175,23 @@ function makeCardRow(avatar, solo = null) {
         });
     }
 
+    // ✎ opens the card in the Character Editor (shown only while its address is set, as .ss-editor-link).
+    if (character) {
+        const edit = document.createElement('div');
+        edit.classList.add('gr-card-edit', 'ss-editor-link', 'fa-solid', 'fa-pen-to-square', 'fa-fw', 'interactable');
+        edit.tabIndex = 0;
+        edit.setAttribute('role', 'button');
+        edit.title = t`Edit ${character.name} in the Character Editor`;
+        edit.addEventListener('click', () => openInEditor({ card: avatar }));
+        edit.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openInEditor({ card: avatar });
+            }
+        });
+        row.appendChild(edit);
+    }
+
     /**
      * Builds a hidden-checkbox icon toggle that sits inline on the row.
      * @param {string} className Modifier class

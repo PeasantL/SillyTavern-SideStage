@@ -720,21 +720,30 @@ async function catchUpWithEditor() {
 const CATCH_UP_GAP = 2000;
 let catchingUp = null;
 let caughtUpAt = 0;
+/** A return to the tab left while a reply was being generated, caught up with once it is done (catchUpAfterReply()). */
+let missedCatchUp = false;
+let waitingForReply = null;
 
 /**
  * Back in the SillyTavern tab or window, maybe from the Character Editor: takes
  * the lorebooks, cards, worlds and layouts changed there meanwhile, so the
  * world groups are in step without ⟳ (catchUpWithEditor()). A World Info edit
  * made just before leaving the tab has been saved by then (ST saves it within
- * a second), so its file already has it. Left for the next return while a
- * reply is being generated, as reloading the characters would wait for it.
+ * a second), so its file already has it. Left until the reply is done while
+ * one is being generated, as reloading the characters would wait for it.
  */
 export function onBackToTab() {
     if (document.visibilityState !== 'visible' || !worldsResolved || catchingUp || refreshingWorlds
-        || isGenerating() || Date.now() - caughtUpAt < CATCH_UP_GAP) {
+        || Date.now() - caughtUpAt < CATCH_UP_GAP) {
         return;
     }
 
+    if (isGenerating()) {
+        missedCatchUp = true;
+        return;
+    }
+
+    missedCatchUp = false;
     catchingUp = (async () => {
         try {
             await refreshCachedLorebooks();
@@ -746,6 +755,26 @@ export function onBackToTab() {
             caughtUpAt = Date.now();
         }
     })();
+}
+
+/**
+ * Catches up with a return to the tab that came while a reply was being
+ * generated (onBackToTab() leaves it till then), so it isn't left for the next
+ * return. A group's round is several generations, so it waits until none is
+ * going; one that starts straight after (auto mode) leaves it for the next end.
+ */
+export function catchUpAfterReply() {
+    if (!missedCatchUp || waitingForReply) {
+        return;
+    }
+
+    waitingForReply = waitUntilCondition(() => !isGenerating(), 10 * 60 * 1000, 250)
+        .then(() => onBackToTab())
+        // Still generating after ten minutes: the next return catches up.
+        .catch(() => {})
+        .finally(() => {
+            waitingForReply = null;
+        });
 }
 
 /**

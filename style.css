@@ -590,6 +590,34 @@ body.ss-tablet:not(.waifuMode):has(> .zoomed_avatar) .ss-strip :is(.gr-body, .gr
     color: var(--SmartThemeBodyColor);
 }
 
+/* ✎ after the name: opens the card in the Character Editor. Narrower and
+   fainter than the toggles, as it leaves the chat rather than acting in it. */
+.gr-card-edit {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0.35;
+    transition: opacity 0.2s, background-color 0.2s;
+}
+
+@media (hover: hover) {
+  .gr-card-edit:hover {
+      opacity: 1;
+      background: rgba(255, 255, 255, 0.15);
+  }
+}
+
+.gr-card-edit:focus-visible {
+    outline: 2px solid var(--SmartThemeQuoteColor);
+    outline-offset: 2px;
+    opacity: 1;
+}
+
 /* ---- Inline icon toggles ------------------------------------------------ */
 .gr-icon-toggle {
     flex: 0 0 auto;
