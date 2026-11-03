@@ -4,8 +4,10 @@
  * `data.extensions.sidestage.narrator`; it never shows in the character list, the roster or the image viewer, and
  * the Character Editor leaves it out of its list too. Its portrait is the Character Editor's icon (narrator.png).
  */
-import { characters, entitiesFilter, getCharacters, getRequestHeaders, printCharactersDebounced } from '../../../../../script.js';
+import { characters, entitiesFilter, getCharacters, getRequestHeaders, printCharactersDebounced, eventSource, event_types, substituteParams, setExtensionPrompt, extension_prompt_types, extension_prompt_roles } from '../../../../../script.js';
 import { t } from '../../../../i18n.js';
+import { getSettings } from './settings.js';
+import { getCharacterByAvatar, getCurrentGroup } from './util.js';
 
 const NARRATOR_NAME = 'Narrator';
 const NARRATOR_DESCRIPTION = [
@@ -21,6 +23,9 @@ const AVATAR_URL = new URL('../narrator.png', import.meta.url);
  * (or none) gets the new one once. Kept in the card as `sidestage.avatar`.
  */
 const AVATAR_VERSION = 1;
+
+/** Extension prompt that gives the aside answerer, for their turn, the descriptions of everyone in the scene. */
+const CAST_PROMPT_KEY = 'sidestage_cast';
 
 /** Key under ST's entity filter functions that keeps the narrator out of the character list. */
 const LIST_FILTER_KEY = 'sidestageNarrator';
@@ -38,6 +43,78 @@ export function getNarratorAvatar() {
 /** @returns {boolean} Whether an avatar file name is the narrator's. */
 export function isNarrator(avatar) {
     return !!avatar && avatar === getNarratorAvatar();
+}
+
+/**
+ * Who answers the asides in the open group: the member named in the "Answered
+ * by" setting (matched without regard to case), or else SideStage's own
+ * narrator card when the group has it, as every world's group does. Muted
+ * members count: they answer asides but not rounds. The layout's opening and
+ * the roster's entrance and exit lines are posted as them too, so every
+ * narrator line in the chat looks the same.
+ * @returns {string|null} Their avatar, or null outside a group, with the setting blank, or with neither
+ */
+export function getOocNarrator() {
+    const name = String(getSettings().oocNarrator ?? '').trim().toLowerCase();
+    const group = getCurrentGroup();
+
+    if (!name || !Array.isArray(group?.members)) {
+        return null;
+    }
+
+    const named = group.members.find(avatar => getCharacterByAvatar(avatar)?.name?.trim().toLowerCase() === name);
+    return named ?? group.members.find(isNarrator) ?? null;
+}
+
+/**
+ * The descriptions of everyone in the open group's scene (unmuted, and not the
+ * answerer), for the answerer's prompt. A world group swaps cards, so their own
+ * card is all a turn would otherwise have of anyone.
+ * @param {string} answerer Avatar of who is answering
+ * @returns {string} Blank when nobody in the scene has a description
+ */
+function buildCastPrompt(answerer) {
+    const group = getCurrentGroup();
+    const muted = Array.isArray(group?.disabled_members) ? group.disabled_members : [];
+    const parts = (group?.members ?? [])
+        .filter(avatar => avatar !== answerer && !muted.includes(avatar))
+        .map(getCharacterByAvatar)
+        .filter(character => character && !isNarratorCard(character))
+        .map(character => {
+            const description = substituteParams(String(character.description ?? '').trim(), { name2Override: character.name });
+            return description ? `${character.name}:\n${description}` : '';
+        })
+        .filter(Boolean);
+
+    return parts.length ? `[The characters in the scene]\n\n${parts.join('\n\n')}` : '';
+}
+
+/**
+ * Sets or clears the cast prompt as each group member is drafted: the aside
+ * answerer's turns (OOC, Morality, Scene, and swipes of them) get it, nobody
+ * else's do.
+ * @param {number} chId Index into characters of who is about to speak
+ */
+function onMemberDrafted(chId) {
+    const answerer = getOocNarrator();
+    const text = answerer && characters[chId]?.avatar === answerer ? buildCastPrompt(answerer) : '';
+    setExtensionPrompt(CAST_PROMPT_KEY, text, extension_prompt_types.IN_PROMPT, 0, false, extension_prompt_roles.SYSTEM);
+}
+
+/** Clears the cast prompt, so it never outlives the turn it was set for. */
+function clearCastPrompt() {
+    setExtensionPrompt(CAST_PROMPT_KEY, '', extension_prompt_types.IN_PROMPT, 0);
+}
+
+/** Gives the aside answerer the scene's descriptions on each of their turns. */
+export function watchNarratorTurns() {
+    eventSource.on(event_types.GROUP_MEMBER_DRAFTED, onMemberDrafted);
+
+    for (const type of [event_types.GROUP_WRAPPER_FINISHED, event_types.GENERATION_STOPPED, event_types.CHAT_CHANGED]) {
+        if (type) {
+            eventSource.on(type, clearCastPrompt);
+        }
+    }
 }
 
 /** @returns {Promise<File>} narrator.png, ready to upload as a card's image. */

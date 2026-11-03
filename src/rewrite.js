@@ -9,8 +9,7 @@ import { waitUntilCondition } from '../../../../utils.js';
 import { t } from '../../../../i18n.js';
 import { getSettings, rosterDefaults } from './settings.js';
 import { forceTurn } from './scene.js';
-import { getCharacterByAvatar, getCurrentGroup } from './util.js';
-import { isNarrator } from './narrator.js';
+import { getOocNarrator } from './narrator.js';
 
 /**
  * The footer's three rewrite actions.
@@ -686,25 +685,6 @@ const OOC_TURN_TIMEOUT = 10 * 60 * 1000;
  * ghosted when the next ordinary turn starts instead (ghostPendingOoc()).
  */
 const PENDING_GHOST_KEY = 'sidestage_ooc_ghost';
-
-/**
- * Who answers the asides in the open group: the member named in the "Answered
- * by" setting (matched without regard to case), or else SideStage's own
- * narrator card when the group has it, as every world's group does. Muted
- * members count: they answer asides but not rounds.
- * @returns {string|null} Their avatar, or null outside a group, with the setting blank, or with neither
- */
-function getOocNarrator() {
-    const name = String(getSettings().oocNarrator ?? '').trim().toLowerCase();
-    const group = getCurrentGroup();
-
-    if (!name || !Array.isArray(group?.members)) {
-        return null;
-    }
-
-    const named = group.members.find(avatar => getCharacterByAvatar(avatar)?.name?.trim().toLowerCase() === name);
-    return named ?? group.members.find(isNarrator) ?? null;
-}
 
 /**
  * Has the narrator answer an OOC line as a forced turn.

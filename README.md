@@ -47,7 +47,7 @@ group.
 - **Who is in the scene**: Selecting a layout unmutes the members it puts in the scene and mutes the rest, and every new chat restores it. Muting a member from the panel changes the chat you're in without touching the layout, so a layout stays a fixed, repeatable arrangement.
 - **Everyone in the scene has a turn**: Each card in the scene has its own turn in the layout: the message it posts when the scene opens. Turns are written for that layout alone, so they can follow on from each other, and they are kept in the layout rather than in the cards. A blank turn posts nothing, so a card can be present from the first line without speaking.
 - **What order**: Each layout sets who opens the scene first. Each layout keeps its own order, so two scenes with the same cast can start from different people.
-- **A narrator**: Optional scene-setting text posted ahead of the turns — where you are, what has just happened. It reaches the prompt as narration rather than as anyone's dialogue.
+- **A narrator**: Optional scene-setting text posted ahead of the turns — where you are, what has just happened. It is posted as whoever answers the OOC, Morality and Scene asides (in a world's group, SideStage's narrator), with the same name and portrait as their answers; so are the roster's entrance and exit lines. In a group with nobody to answer the asides, it is SillyTavern's own narrator line, which reaches the prompt as narration rather than as anyone's dialogue.
 - **Per-layout Author's Note**: Optional; blank falls back to the group's.
 - **No layout**: Always available, and the default. A world group with no layout selected behaves as SillyTavern's groups always do, except that its muted members don't greet; ordinary groups always behave that way, muted members included.
 - **No greeting pickers**: While a layout writes the opening (and for a world group's muted members), other extensions' greeting choices are skipped, so the Group Greetings extension's *Pick a greeting* popup doesn't appear for a greeting that would be replaced anyway.
@@ -81,7 +81,11 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   Nothing is sent to the chat, and `{{macros}}` come back intact.
 - **OOC**: Wraps what you have typed as `[OOC: ...]` and sends it the way a
   Quick Reply does — into the message box, then Send — so the answer is an
-  ordinary reply with the usual prompt, context and streaming.
+  ordinary reply with the usual prompt, context and streaming. In a group with
+  someone to answer (*Answered by* in the settings drawer; in a world's group,
+  SideStage's narrator) they answer it as a turn of their own, and that turn's
+  prompt also has the description of everyone in the scene (unmuted), since a
+  world's group otherwise gives each turn only the speaker's own card.
 - **Morality**: The same aside, asking what is evil about the scene as it
   stands. Nothing to type; the wording is editable in the settings drawer.
 - **Scene**: The same aside, asking for a description of the scene as it

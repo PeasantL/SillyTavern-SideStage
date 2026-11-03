@@ -13,6 +13,7 @@ import { getActiveLayout, getActiveStage, getGroupWorld, getStage } from './worl
 import { getSoloScene } from './solo.js';
 import { refreshPanel } from './panel.js';
 import { getSettings, rosterDefaults } from './settings.js';
+import { getOocNarrator } from './narrator.js';
 
 /** Chat-scoped display name for narrator messages, set by ST's /sysname. */
 const NARRATOR_NAME_KEY = 'narrator_name';
@@ -219,8 +220,16 @@ export function quietOtherGreetingPickers() {
  * @returns {object|null}
  */
 function buildGreetingMessage(character, text) {
-    const mes = substituteParams(String(text ?? '').trim(), { name2Override: character.name });
+    return buildCharacterMessage(character, substituteParams(String(text ?? '').trim(), { name2Override: character.name }));
+}
 
+/**
+ * A message posted as a character, its text already filled in.
+ * @param {object} character
+ * @param {string} mes
+ * @returns {object|null} Null for a blank text
+ */
+function buildCharacterMessage(character, mes) {
     if (!mes) {
         return null;
     }
@@ -242,19 +251,27 @@ function buildGreetingMessage(character, text) {
 /**
  * Builds a narrator line: the layout's opening, or an entrance or exit.
  *
- * A narrator-type message, which is what earns it the system avatar and, in
- * formatMessageHistoryItem(), a place in the prompt with no name in front of
- * it — scene text rather than a line of dialogue from someone. Not a system
- * message, so it does reach the prompt.
+ * Posted as whoever answers the asides (getOocNarrator(): in a world's group,
+ * SideStage's narrator card), so it looks like the OOC, Morality and Scene
+ * answers that come after it, with the same name and portrait. With nobody to
+ * answer them, a narrator-type message instead, which is what earns it the
+ * system avatar and, in formatMessageHistoryItem(), a place in the prompt with
+ * no name in front of it. Not a system message, so either way it reaches the
+ * prompt.
  * @param {string} text
  * @param {string} [name2] Who {{char}} is in the text
  * @returns {object|null}
  */
 function buildNarratorMessage(text, name2 = undefined) {
     const mes = substituteParams(String(text ?? '').trim(), name2 ? { name2Override: name2 } : undefined);
+    const narrator = getCharacterByAvatar(getOocNarrator());
 
     if (!mes) {
         return null;
+    }
+
+    if (narrator) {
+        return buildCharacterMessage(narrator, mes);
     }
 
     return {
