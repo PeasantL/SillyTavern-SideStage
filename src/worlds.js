@@ -2,7 +2,7 @@
  * Worlds and their groups: which group is a world's, its stage and selected layout, syncing members,
  * and catching up with what the Character Editor changed (on ⟳, at start, and on coming back to the tab).
  */
-import { eventSource, event_types, characters, isGenerating, default_avatar, getCharacters, getRequestHeaders } from '../../../../../script.js';
+import { eventSource, event_types, characters, isGenerating, default_avatar, getCharacters, getRequestHeaders, saveSettingsDebounced } from '../../../../../script.js';
 import { groups, editGroup, group_generation_mode, DEFAULT_AUTO_MODE_DELAY } from '../../../../group-chats.js';
 import { saveWorldInfo } from '../../../../world-info.js';
 import * as worldInfo from '../../../../world-info.js';
@@ -15,6 +15,7 @@ import { openPanelForSolo, refreshPanel } from './panel.js';
 import { renderSettings } from './drawer.js';
 import { applyLock } from './lock.js';
 import { ensureNarratorCard, getNarratorAvatar } from './narrator.js';
+import { getSettings } from './settings.js';
 
 /**
  * The stage of one group, kept in its world's lorebook.
@@ -426,6 +427,42 @@ export async function syncWorldGroup(groupId) {
     return true;
 }
 
+/**
+ * Puts the world groups earlier versions made (in Append) on Swap, once:
+ * SideStage makes them that way now (createWorldGroup). Only plain Append is
+ * changed, and only this once, so a group set back to Append afterwards (or
+ * to Append with muted members) stays as it is. Waits until some world group
+ * is known, so a start before the characters have loaded doesn't use it up.
+ */
+async function swapOldWorldGroups() {
+    const settings = getSettings();
+
+    if (settings.worldGroupsSwapped || ![...groupWorlds.values()].some(Boolean)) {
+        return;
+    }
+
+    const switched = [];
+
+    for (const [groupId, world] of groupWorlds) {
+        const group = world ? groups.find(x => x.id === groupId) : null;
+
+        if (group?.generation_mode === group_generation_mode.APPEND) {
+            group.generation_mode = group_generation_mode.SWAP;
+            await editGroup(groupId, true, false);
+            switched.push(world);
+        }
+    }
+
+    settings.worldGroupsSwapped = true;
+    saveSettingsDebounced();
+
+    if (switched.length) {
+        toastr.info(switched.length === 1
+            ? t`The world group "${switched[0]}" now swaps character cards: each reply sees only the speaker's own card.`
+            : t`The world groups ${switched.join(', ')} now swap character cards: each reply sees only the speaker's own card.`);
+    }
+}
+
 /** Syncs every world's group. */
 async function syncWorldGroups() {
     for (const [groupId, world] of groupWorlds) {
@@ -462,6 +499,7 @@ export function refreshWorlds({ reload = false } = {}) {
             await ensureNarratorCard();
             await resolveWorlds();
             await ensureWorldGroups();
+            await swapOldWorldGroups();
             await syncWorldGroups();
         } catch (error) {
             console.error('[SideStage] Could not sync the world groups', error);
@@ -491,8 +529,12 @@ export const syncWorldGroupsSoon = debounce(() => {
 /**
  * Creates a world's group, with the world's whole cast in the scene, and
  * records it in the world's lorebook (keeping layouts the world kept from a
- * deleted group). Members' cards are joined (Append) rather than swapped, so
- * the scene's card text is the unmuted members'.
+ * deleted group). Members' cards are swapped rather than joined (Append): each
+ * reply's prompt has only the speaker's own card and Character's Note, so the
+ * characters keep their voices and their secrets apart, and the world's
+ * lorebook (its character entries) tells each of them who the others are.
+ * Prefix caches keep every member's last turn, so a swap costs each member's
+ * first turn and what was said since they last spoke, not the whole prompt.
  * @param {string} world
  * @param {object} data The world's lorebook, freshly read
  */
@@ -508,7 +550,7 @@ async function createWorldGroup(world, data) {
             avatar_url: default_avatar,
             allow_self_responses: false,
             activation_strategy: 0,
-            generation_mode: group_generation_mode.APPEND,
+            generation_mode: group_generation_mode.SWAP,
             auto_mode_delay: DEFAULT_AUTO_MODE_DELAY,
         }),
     });

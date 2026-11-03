@@ -51,6 +51,12 @@ export const rosterDefaults = {
      * @type {string}
      */
     editorUrl: '',
+    /**
+     * Set once the world groups earlier versions made in Append mode have been
+     * put on Swap (worlds.js, swapOldWorldGroups). Not shown in the drawer.
+     * @type {boolean}
+     */
+    worldGroupsSwapped: false,
 };
 
 export function getSettings() {
