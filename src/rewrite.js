@@ -1,15 +1,15 @@
 /**
  * The button row above the message box: Perspective, Directive and Spell check rewrites, and the OOC asides.
  */
-import { eventSource, event_types, isGenerating, saveSettingsDebounced, chat, updateMessageBlock, messageFormatting, scrollChatToBottom, substituteParams, generateRaw, name1, system_message_types, saveChatConditional, ensureSwipes, syncMesToSwipe, syncSwipeToMes, refreshSwipeButtons } from '../../../../../script.js';
+import { eventSource, event_types, isGenerating, Generate, saveSettingsDebounced, chat, updateMessageBlock, messageFormatting, scrollChatToBottom, substituteParams, generateRaw, name1, system_message_types, saveChatConditional, ensureSwipes, syncMesToSwipe, syncSwipeToMes, refreshSwipeButtons } from '../../../../../script.js';
 import { getMessageTimeStamp } from '../../../../RossAscends-mods.js';
 import { hideChatMessageRange } from '../../../../chats.js';
 import { parseReasoningFromString } from '../../../../reasoning.js';
 import { waitUntilCondition } from '../../../../utils.js';
 import { t } from '../../../../i18n.js';
 import { getSettings, rosterDefaults } from './settings.js';
-import { forceTurn } from './scene.js';
-import { getOocNarrator } from './narrator.js';
+import { forceTurn, sendUserTurnOnly } from './scene.js';
+import { beginSoloNarratorTurn, endSoloNarratorTurn, getOocNarrator, getSoloNarrator } from './narrator.js';
 
 /**
  * The footer's three rewrite actions.
@@ -700,6 +700,36 @@ async function askNarrator(textarea, line, narrator) {
 }
 
 /**
+ * Has the narrator answer an OOC line in a solo chat: the line is posted as
+ * your turn, then the reply is generated (with the chat's own card, the only
+ * one a solo chat has, told the reply is the narrator's) and posted under the
+ * narrator's name and portrait. A swipe of it asks the narrator again.
+ * @param {HTMLTextAreaElement} textarea
+ * @param {string} line
+ * @param {string} narrator Avatar of the card who answers
+ * @returns {Promise<void>}
+ */
+async function askSoloNarrator(textarea, line, narrator) {
+    try {
+        await waitUntilCondition(() => !isGenerating(), 10000, 100);
+    } catch {
+        toastr.warning(t`Wait for the reply being generated to finish first.`);
+        return;
+    }
+
+    textarea.value = line;
+    await sendUserTurnOnly();
+    beginSoloNarratorTurn(narrator);
+
+    try {
+        await Generate('normal');
+        await waitUntilCondition(() => !isGenerating(), OOC_TURN_TIMEOUT, 200).catch(() => {});
+    } finally {
+        await endSoloNarratorTurn();
+    }
+}
+
+/**
  * Sends an OOC line as a Quick Reply does, and waits for whoever the chat
  * picks to finish answering.
  * @param {HTMLTextAreaElement} textarea
@@ -782,9 +812,12 @@ async function runOocTurn(oocLine) {
     const askMessageId = chat.length;
     const line = substituteParams(oocLine);
     const narrator = getOocNarrator();
+    const soloNarrator = narrator ? null : getSoloNarrator();
 
     if (narrator) {
         await askNarrator(textarea, line, narrator);
+    } else if (soloNarrator) {
+        await askSoloNarrator(textarea, line, soloNarrator);
     } else {
         await askAsQuickReply(textarea, line, askMessageId);
     }

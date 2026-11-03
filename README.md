@@ -85,11 +85,19 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   someone to answer (*Answered by* in the settings drawer; in a world's group,
   SideStage's narrator) they answer it as a turn of their own, and that turn's
   prompt also has the description of everyone in the scene (unmuted), since a
-  world's group otherwise gives each turn only the speaker's own card.
+  world's group otherwise gives each turn only the speaker's own card. In a
+  solo chat the narrator answers too: the reply is generated with the chat's
+  card (the only one a solo chat has), told it is the narrator's and given the
+  narrator's description, and is posted under the narrator's name and portrait;
+  a swipe of it asks the narrator again.
 - **Morality**: The same aside, asking what is evil about the scene as it
   stands. Nothing to type; the wording is editable in the settings drawer.
 - **Scene**: The same aside, asking for a description of the scene as it
   stands. Nothing to type; the wording is editable in the settings drawer.
+- **The narrator stays out of sight**: SideStage's narrator is a muted
+  member of every world's group, so it can answer the asides, but
+  SillyTavern's group views leave it out: the group list's names, count and
+  portraits, and the member list of the group's own panel.
 - **Ghost**: A toggle at the right end of the row. While it is on, both halves
   of an aside are ghosted when your next ordinary turn starts — ST's own
   *Exclude message from prompts* — so the exchange stays on screen but never

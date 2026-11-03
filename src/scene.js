@@ -642,7 +642,7 @@ export function watchManualNoteEdits() {
  * forceTurn() runs this first when the box has text, then generates.
  * @returns {Promise<void>}
  */
-async function sendUserTurnOnly() {
+export async function sendUserTurnOnly() {
     const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
     const text = String(textarea?.value ?? '').trim();
 

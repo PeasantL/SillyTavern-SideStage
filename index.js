@@ -25,7 +25,7 @@ import { addSettings } from './src/drawer.js';
 import { initImages, loadImageSettings } from './src/images.js';
 import { pinStatusBar, stretchMobileLayout, watchTablet } from './src/tablet.js';
 import { applyLock, lockCommands, watchLock } from './src/lock.js';
-import { hideNarratorFromList, watchNarratorTurns } from './src/narrator.js';
+import { hideNarratorFromList, hideNarratorInGroups, watchNarratorTurns } from './src/narrator.js';
 
 jQuery(async () => {
     stretchMobileLayout();
@@ -44,6 +44,7 @@ jQuery(async () => {
     watchManualNoteEdits();
     watchLock();
     hideNarratorFromList();
+    hideNarratorInGroups();
 
     eventSource.on(event_types.CHARACTER_FIRST_MESSAGE_SELECTED, applyLayoutGreeting);
     eventSource.on(event_types.GROUP_CHAT_CREATED, openSceneFromLayout);
