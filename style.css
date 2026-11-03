@@ -964,7 +964,7 @@ body.ss-lock :is(#rm_button_create, #character_import_button, #external_import_b
 body.ss-lock-card #form_create :is([id="renameCharButton"], [id="dupe_button"], [id="delete_button"], #favorite_button, #world_button),
 body.ss-lock-card .alternate_grettings :is(.add_alternate_greeting, .delete_alternate_greeting, .move_up_alternate_greeting, .move_down_alternate_greeting),
 body.ss-lock-world :is(#world_popup_name_button, #world_duplicate, #world_popup_delete, #world_popup_new, #world_backfill_memos, #world_apply_current_sorting),
-body.ss-lock-world #world_popup_entries_list :is(.killSwitch, .menu_button, .drag-handle),
+body.ss-lock-world #world_popup_entries_list :is(.menu_button, .drag-handle),
 body.ss-lock-group :is(#rm_group_delete, #rm_group_members [data-action="remove"], #rm_group_add_members [data-action="add"]) {
     filter: brightness(75%) grayscale(1);
     opacity: 0.5;
@@ -973,19 +973,52 @@ body.ss-lock-group :is(#rm_group_delete, #rm_group_members [data-action="remove"
 
 /* Not pointer-events: none on the buttons themselves, so the not-allowed cursor shows; index.js stops the click. */
 
-/* Locked text fields keep their text readable: SillyTavern dims disabled
-   fields as a whole (filter: brightness(0.5)), text included, and Safari fades
-   their text too. A dashed border says they are locked instead. Checkboxes and
-   other toggles stay greyed. The expanded (⛶) editor of a locked field,
-   read-only, looks the same. */
+/* Managed by the Character Editor: nothing locked is greyed out, so it all
+   stays readable. Text fields are read-only (they can still be selected,
+   copied and scrolled); toggles and selects are disabled, which SillyTavern
+   and the browsers dim, so that is undone here. What marks them is a dashed
+   border, the tooltip and the notice at the top (.ss-lock-notice). The
+   expanded (⛶) editor of a locked field looks the same. */
 :is(textarea, select, input:not([type="checkbox"], [type="radio"], [type="range"]))[data-ss-locked],
 .maximized_textarea.ss-locked-field {
-    cursor: not-allowed;
     filter: none;
     opacity: 1;
     color: var(--SmartThemeBodyColor);
     -webkit-text-fill-color: var(--SmartThemeBodyColor);
-    border-style: dashed;
+    border-style: dashed !important;
+}
+
+:is(select, input)[data-ss-locked="disabled"] {
+    cursor: not-allowed;
+}
+
+/* Checkboxes, radios and sliders: their state in full colour, outlined dashed. */
+input:is([type="checkbox"], [type="radio"], [type="range"])[data-ss-locked] {
+    filter: none;
+    opacity: 1;
+    color: var(--SmartThemeBodyColor);
+    cursor: not-allowed;
+    outline: 1px dashed var(--SmartThemeBorderColor);
+    outline-offset: 2px;
+}
+
+/* A world entry's on/off switch shows its state: not greyed, only not clickable. */
+body.ss-lock-world #world_popup_entries_list .killSwitch {
+    cursor: not-allowed;
+}
+
+/* The locked notices: SillyTavern's info block, with a lock. */
+.ss-lock-notice {
+    display: none;
+}
+
+.ss-lock-notice > .fa-lock {
+    margin-right: 0.35em;
+}
+
+body.ss-lock-card #ss_card_lock_notice {
+    display: block;
+    margin: 5px 0;
 }
 
 /* The entries' multi-selects (Filter to Characters or Tags, Filter to
@@ -1015,15 +1048,11 @@ body.ss-lock-world #world_popup_entries_list .select2-container--disabled .selec
 }
 
 /* The notice atop the World Info editor, only while it has a world open. */
-#ss_world_lock_notice {
-    display: none;
-}
-
 body.ss-lock-world #ss_world_lock_notice {
     display: block;
 }
 
-#ss_world_lock_open {
+:is(#ss_world_lock_open, #ss_card_lock_open) {
     margin-left: 0.5em;
 }
 

@@ -49,6 +49,59 @@ function isLocked() {
     return !!getSettings().lockManaged;
 }
 
+/** @returns {boolean} Whether a field holds text, which is made read-only (still selectable and scrollable) rather than disabled. */
+function isTextField(el) {
+    return el instanceof HTMLTextAreaElement
+        || (el instanceof HTMLInputElement && !['checkbox', 'radio', 'range', 'file', 'color', 'button', 'submit', 'reset'].includes(el.type));
+}
+
+/**
+ * Locks a field, or lets it go. Text is made read-only, so it can still be
+ * read, selected, copied and scrolled at full colour; toggles and selects,
+ * which have no read-only state, are disabled (style.css keeps them in full
+ * colour). Either way it is marked (`data-ss-locked`, dashed in style.css) and
+ * its tooltip says who manages it. A field SillyTavern itself made read-only or
+ * disabled is left as it is.
+ * @param {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} el
+ * @param {boolean} on
+ * @param {string} title What the tooltip says while locked
+ */
+function setFieldLock(el, on, title) {
+    const text = isTextField(el);
+
+    if (on && el.dataset.ssLocked === undefined) {
+        if (text ? /** @type {HTMLInputElement} */ (el).readOnly : el.disabled) {
+            return;
+        }
+        if (text) {
+            /** @type {HTMLInputElement} */ (el).readOnly = true;
+        } else {
+            el.disabled = true;
+        }
+        el.dataset.ssLocked = text ? 'readonly' : 'disabled';
+        if (el.hasAttribute('title')) {
+            el.dataset.ssTitle = el.getAttribute('title');
+        }
+        el.title = title;
+    } else if (!on && el.dataset.ssLocked !== undefined) {
+        if (el.dataset.ssLocked === 'readonly') {
+            /** @type {HTMLInputElement} */ (el).readOnly = false;
+        } else {
+            el.disabled = false;
+        }
+        delete el.dataset.ssLocked;
+        if (el.dataset.ssTitle !== undefined) {
+            el.title = el.dataset.ssTitle;
+            delete el.dataset.ssTitle;
+        } else {
+            el.removeAttribute('title');
+        }
+    }
+}
+
+const CARD_FIELD_TITLE = () => t`Managed by the Character Editor: read-only here.`;
+const WORLD_FIELD_TITLE = () => t`This world is managed by the Character Editor: read-only here.`;
+
 /** @returns {boolean} Whether the card panel is editing a saved card (not creating one). */
 function isEditingCard() {
     return $('#form_create').attr('actiontype') === 'editcharacter';
@@ -66,9 +119,10 @@ function isWorldGroupOpen() {
 }
 
 /**
- * Greys out the locked controls, or lets them go. Fields are disabled, which
- * also drops them from SillyTavern's card save; that is safe because the save
- * itself is cut down to the chat it records while locked (see lockedFetch()).
+ * Locks the controls, or lets them go: buttons are greyed out, fields made
+ * read-only (setFieldLock()). SillyTavern's card save still sends them; that is
+ * safe because the save itself is cut down to the chat it records while
+ * locked (see watchCardSaves()).
  */
 export function applyLock() {
     const locked = isLocked();
@@ -80,13 +134,7 @@ export function applyLock() {
         if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) || ['hidden', 'submit', 'button'].includes(el.type)) {
             continue;
         }
-        if (fields && !el.disabled) {
-            el.disabled = true;
-            el.dataset.ssLocked = '';
-        } else if (!fields && el.dataset.ssLocked !== undefined) {
-            el.disabled = false;
-            delete el.dataset.ssLocked;
-        }
+        setFieldLock(el, fields, CARD_FIELD_TITLE());
     }
 
     $('#char-management-dropdown option').filter(LOCKED_CARD_CONTROLS).prop('disabled', fields);
@@ -98,7 +146,7 @@ export function applyLock() {
 }
 
 /**
- * Disables the fields of the entries the World Info editor shows while it has
+ * Locks the fields of the entries the World Info editor shows while it has
  * a world's lorebook open, or lets them go. SillyTavern saves a lorebook whole
  * from its own copy, so an edit there could put back what the Character Editor
  * changed meanwhile. The entries are drawn a page (and an opened entry) at a
@@ -111,13 +159,7 @@ function lockWorldEntries() {
         if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) || el.type === 'hidden') {
             continue;
         }
-        if (locked && !el.disabled) {
-            el.disabled = true;
-            el.dataset.ssLocked = '';
-        } else if (!locked && el.dataset.ssLocked !== undefined) {
-            el.disabled = false;
-            delete el.dataset.ssLocked;
-        }
+        setFieldLock(el, locked, WORLD_FIELD_TITLE());
     }
 }
 
@@ -128,7 +170,7 @@ function isLockedField(id) {
 }
 
 /**
- * Disables the fields of the Alternate Greetings popup SillyTavern just opened
+ * Locks the fields of the Alternate Greetings popup SillyTavern just opened
  * for a card being edited. They are marked like the card form's, so their ⛶
  * expanded editors are read-only too (see lockExpandedEditor()).
  */
@@ -138,9 +180,8 @@ function lockAlternateGreetings() {
     }
 
     for (const el of document.querySelectorAll(ALTERNATE_GREETING_FIELDS)) {
-        if (el instanceof HTMLTextAreaElement && !el.disabled) {
-            el.disabled = true;
-            el.dataset.ssLocked = '';
+        if (el instanceof HTMLTextAreaElement) {
+            setFieldLock(el, true, CARD_FIELD_TITLE());
         }
     }
 }
@@ -155,6 +196,7 @@ function lockExpandedEditor(id) {
         if (textarea instanceof HTMLTextAreaElement && textarea.dataset.for === id) {
             textarea.readOnly = true;
             textarea.classList.add('ss-locked-field');
+            textarea.title = CARD_FIELD_TITLE();
         }
     }
 }
@@ -208,7 +250,8 @@ function lockedReason(el) {
  * @returns {{text: string, to: object}|null}
  */
 function lockedFieldReason(el) {
-    if (!isLocked() || !el.closest('[data-ss-locked], .maximized_textarea.ss-locked-field')) {
+    const select2 = el.closest(`${WORLD_ENTRIES} .select2-container--disabled`);
+    if (!isLocked() || !(select2 || el.closest('[data-ss-locked], .maximized_textarea.ss-locked-field'))) {
         return null;
     }
     if (el.closest(WORLD_ENTRIES)) {
@@ -294,15 +337,39 @@ export function watchLock() {
         }
     }, true);
 
-    // A locked field is disabled, so it gets no clicks, only pointer events: say why when it is tapped or
-    // clicked. Not on pointerdown: a touch that turns into a scroll ends in pointercancel instead.
+    // A locked toggle or select is disabled, so it gets no clicks, only pointer events: say why when it is
+    // tapped or clicked. Not a read-only text field, which is clicked into to read or select it. Not on
+    // pointerdown: a touch that turns into a scroll ends in pointercancel instead.
     document.addEventListener('pointerup', (e) => {
-        const reason = e.target instanceof Element && e.button === 0 ? lockedFieldReason(e.target) : null;
+        const target = e.target instanceof Element ? e.target : null;
+        const readable = target?.closest('[data-ss-locked="readonly"], .maximized_textarea.ss-locked-field');
+        const reason = target && e.button === 0 && !readable ? lockedFieldReason(target) : null;
 
         if (reason) {
             toastLocked(reason.text, reason.to);
         }
     }, true);
+
+    // A read-only text field says why once something tries to change it: typing, deleting, pasting, cutting
+    // or dropping. Moving about in it, selecting and copying stay quiet.
+    const sayIfReadOnly = (e) => {
+        const reason = e.target instanceof Element && e.target.closest('[data-ss-locked="readonly"], .maximized_textarea.ss-locked-field')
+            ? lockedFieldReason(e.target)
+            : null;
+        if (reason) {
+            toastLocked(reason.text, reason.to);
+        }
+    };
+    document.addEventListener('keydown', (e) => {
+        const mod = e.ctrlKey || e.metaKey;
+        const edits = mod ? ['v', 'x', 'z', 'y'].includes(e.key.toLowerCase()) : (e.key.length === 1 || ['Backspace', 'Delete', 'Enter'].includes(e.key));
+        if (edits && !e.altKey) {
+            sayIfReadOnly(e);
+        }
+    }, true);
+    for (const type of ['paste', 'cut', 'drop']) {
+        document.addEventListener(type, sayIfReadOnly, true);
+    }
 
     // The Alternate Greetings popup opens for reading; its fields are drawn
     // by SillyTavern's handler, which runs after this one.
@@ -372,16 +439,27 @@ export function watchLock() {
         }).observe(entries, { childList: true, subtree: true });
     }
 
-    // Like SillyTavern's own notice over Advanced Formatting's greyed-out options; shown by style.css (ss-lock-world).
+    // Like SillyTavern's own notice over Advanced Formatting's locked options; shown by style.css (ss-lock-world,
+    // ss-lock-card). The dashed fields under them can be read and copied, not changed.
     $('#WorldInfo > .flex-container').first().after(`
-        <div id="ss_world_lock_notice" class="info-block warning">
-            <i class="fa-solid fa-triangle-exclamation"></i>
-            <span>${t`This lorebook is a world: greyed-out options are managed by the Character Editor.`}</span>
-            <a id="ss_world_lock_open" class="ss-editor-link" href="#">${t`Open it there`}</a>
+        <div id="ss_world_lock_notice" class="info-block info ss-lock-notice">
+            <i class="fa-solid fa-lock"></i>
+            <span>${t`This lorebook is a world, managed by the Character Editor: the dashed fields are read-only here.`}</span>
+            <a id="ss_world_lock_open" class="ss-editor-link" href="#">${t`Edit it there`}</a>
         </div>`);
     $('#ss_world_lock_open').on('click', (e) => {
         e.preventDefault();
         openInEditor({ world: getWorldInEditor() });
+    });
+    $('#descriptionWrapper').first().before(`
+        <div id="ss_card_lock_notice" class="info-block info ss-lock-notice">
+            <i class="fa-solid fa-lock"></i>
+            <span>${t`This card is managed by the Character Editor: the dashed fields are read-only here.`}</span>
+            <a id="ss_card_lock_open" class="ss-editor-link" href="#">${t`Edit it there`}</a>
+        </div>`);
+    $('#ss_card_lock_open').on('click', (e) => {
+        e.preventDefault();
+        openInEditor({ card: getOpenCardAvatar() });
     });
 
     $(document).on('change', '#world_editor_select', applyLock);
