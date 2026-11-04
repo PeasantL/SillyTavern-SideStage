@@ -1,7 +1,8 @@
 /**
  * The Character Editor lock: SillyTavern's controls for what the editor manages, greyed out.
  */
-import { characters, getRequestHeaders } from '../../../../../script.js';
+import { characterGroupOverlay, characters, getRequestHeaders } from '../../../../../script.js';
+import { BulkEditOverlayState } from '../../../../BulkEditOverlay.js';
 import { selected_group, openGroupId } from '../../../../group-chats.js';
 import { t } from '../../../../i18n.js';
 import { SlashCommandParser } from '../../../../slash-commands/SlashCommandParser.js';
@@ -34,6 +35,13 @@ const LOCKED_GREETING_CONTROLS = '.alternate_grettings .add_alternate_greeting, 
 const ALTERNATE_GREETING_FIELDS = '.alternate_grettings textarea.alternate_greeting_text';
 const LOCKED_IMPORT = '#character_import_button, #external_import_button, .external_import_button';
 const LOCKED_CREATE = '#rm_button_create';
+/**
+ * Bulk edit in the character list (its button, select all, delete, and the
+ * favourite, tag, duplicate, persona and delete of its right-click menu):
+ * it changes cards outside the editor. Its select mode, also reached by a
+ * long press on a character, is left at once while locked (leaveBulkEdit()).
+ */
+const LOCKED_BULK = '#bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton, #character_context_menu button';
 const LOCKED_WORLD_CONTROLS = '#world_popup_name_button, #world_duplicate, #world_popup_delete, #world_popup_new, '
     + '#world_backfill_memos, #world_apply_current_sorting, #world_popup_entries_list :is(.killSwitch, .menu_button, .drag-handle)';
 /** The World Info editor's entries; a world's are read-only while locked (its fields are disabled, see lockWorldEntries()). */
@@ -141,6 +149,9 @@ export function applyLock() {
     lockWorldEntries();
     document.body.classList.toggle('ss-lock-card', fields);
     document.body.classList.toggle('ss-lock', locked);
+    if (locked) {
+        leaveBulkEdit();
+    }
     document.body.classList.toggle('ss-lock-world', locked && isWorldInEditor());
     document.body.classList.toggle('ss-lock-group', locked && isWorldGroupOpen());
 }
@@ -226,6 +237,9 @@ function lockedReason(el) {
     }
     if (el.closest(LOCKED_CREATE)) {
         return { text: t`Create cards in the Character Editor.`, to: {} };
+    }
+    if (el.closest(LOCKED_BULK)) {
+        return { text: t`Bulk editing is locked: change cards in the Character Editor.`, to: {} };
     }
     if (isEditingCard() && el.closest(`${LOCKED_CARD_CONTROLS}, ${LOCKED_GREETING_CONTROLS}`)) {
         return { text: t`This card is managed by the Character Editor; change it there.`, to: { card: getOpenCardAvatar() } };
@@ -324,7 +338,29 @@ export function lockCommands() {
     LOCKED_MEMBER_COMMANDS.forEach(name => wrap(name, () => !!selected_group && !!getGroupWorld(selected_group)));
 }
 
+/**
+ * Takes the character list out of bulk edit's select mode while locked, and
+ * says why when it was asked for (a long press on a character gets there
+ * without the button).
+ * @param {boolean} [say] Whether to show the toast
+ */
+function leaveBulkEdit(say = false) {
+    if (isLocked() && characterGroupOverlay.state === BulkEditOverlayState.select) {
+        characterGroupOverlay.browseState();
+        if (say) {
+            toastLocked(t`Bulk editing is locked: change cards in the Character Editor.`, {});
+        }
+    }
+}
+
 export function watchLock() {
+    // After SillyTavern's own callback, which has just shown the checkboxes and buttons; leaving hides them again.
+    characterGroupOverlay.addStateChangeCallback((state) => {
+        if (state === BulkEditOverlayState.select) {
+            leaveBulkEdit(true);
+        }
+    });
+
     // Capture phase: ahead of SillyTavern's own handlers, including clicks
     // made from the keyboard, which the greyed-out styling doesn't stop.
     document.addEventListener('click', (e) => {
