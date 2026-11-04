@@ -85,7 +85,9 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   someone to answer (*Answered by* in the settings drawer; in a world's group,
   SideStage's narrator) they answer it as a turn of their own, and that turn's
   prompt also has the description of everyone in the scene (unmuted), since a
-  world's group otherwise gives each turn only the speaker's own card. In a
+  world's group otherwise gives each turn only the speaker's own card, and
+  leaves out SillyTavern's group nudge (*Group Nudge* prompt template,
+  “[Write the next reply only as {{char}}.]”), swipes of it included. In a
   solo chat the narrator answers too: the reply is generated with the chat's
   card (the only one a solo chat has), told it is the narrator's and given the
   narrator's description, and is posted under the narrator's name and portrait;

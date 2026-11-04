@@ -4,6 +4,7 @@
  * `data.extensions.sidestage.narrator`; it never shows in the character list, the roster or the image viewer, and
  * the Character Editor leaves it out of its list too. Its portrait is the Character Editor's icon (narrator.png).
  */
+import { oai_settings } from '../../../../openai.js';
 import { characters, entitiesFilter, getCharacters, getRequestHeaders, printCharactersDebounced, eventSource, event_types, substituteParams, setExtensionPrompt, extension_prompt_types, extension_prompt_roles, chat, this_chid, getThumbnailUrl, saveChatConditional, isGenerating } from '../../../../../script.js';
 import { waitUntilCondition } from '../../../../utils.js';
 import { groups, selected_group } from '../../../../group-chats.js';
@@ -104,12 +105,48 @@ function buildCastPrompt(answerer) {
  */
 function onMemberDrafted(chId) {
     const answerer = getOocNarrator();
-    const text = answerer && characters[chId]?.avatar === answerer ? buildCastPrompt(answerer) : '';
+    answererTurn = !!answerer && characters[chId]?.avatar === answerer;
+    const text = answererTurn ? buildCastPrompt(answerer) : '';
     setExtensionPrompt(CAST_PROMPT_KEY, text, extension_prompt_types.IN_PROMPT, 0, false, extension_prompt_roles.SYSTEM);
+}
+
+/** Whether the group member being drafted is the aside answerer: their turns leave out the group nudge. */
+let answererTurn = false;
+
+/**
+ * Takes SillyTavern's group nudge ("[Write the next reply only as {{char}}.]")
+ * out of the aside answerer's prompt: they answer out of character, not as a
+ * member's next reply. Done on the finished prompt rather than by blanking the
+ * setting, which a settings save meanwhile would keep. With system messages
+ * squashed, the nudge is the tail of a joined message, so only that part goes.
+ * @param {{chat: {role: string, content: any}[]}} data
+ */
+function dropGroupNudge(data) {
+    const nudge = answererTurn && selected_group ? substituteParams(String(oai_settings.group_nudge_prompt ?? '')).trim() : '';
+
+    if (!nudge || !Array.isArray(data?.chat)) {
+        return;
+    }
+
+    for (let i = data.chat.length - 1; i >= 0; i--) {
+        const message = data.chat[i];
+        if (message?.role !== 'system' || typeof message.content !== 'string' || !message.content.includes(nudge)) {
+            continue;
+        }
+
+        if (message.content.trim() === nudge) {
+            data.chat.splice(i, 1);
+        } else {
+            const at = message.content.lastIndexOf(nudge);
+            message.content = (message.content.slice(0, at).replace(/\n+$/, '') + message.content.slice(at + nudge.length)).trim();
+        }
+        return;
+    }
 }
 
 /** Clears the cast prompt, so it never outlives the turn it was set for. */
 function clearCastPrompt() {
+    answererTurn = false;
     setExtensionPrompt(CAST_PROMPT_KEY, '', extension_prompt_types.IN_PROMPT, 0);
 }
 
@@ -226,9 +263,10 @@ function onSoloGenerationStarted(type, _params, dryRun) {
     }
 }
 
-/** Gives the aside answerer the scene's descriptions on each of their turns, and runs solo chats' narrator turns. */
+/** Gives the aside answerer the scene's descriptions (and no group nudge) on each of their turns, and runs solo chats' narrator turns. */
 export function watchNarratorTurns() {
     eventSource.on(event_types.GROUP_MEMBER_DRAFTED, onMemberDrafted);
+    eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, dropGroupNudge);
 
     for (const type of [event_types.GROUP_WRAPPER_FINISHED, event_types.GENERATION_STOPPED, event_types.CHAT_CHANGED]) {
         if (type) {
