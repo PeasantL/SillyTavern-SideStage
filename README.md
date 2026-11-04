@@ -81,9 +81,9 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   Nothing is sent to the chat, and `{{macros}}` come back intact.
 - **OOC**: Wraps what you have typed as `[OOC: ...]` and sends it the way a
   Quick Reply does — into the message box, then Send — so the answer is an
-  ordinary reply with the usual prompt, context and streaming. In a group with
-  someone to answer (*Answered by* in the settings drawer; in a world's group,
-  SideStage's narrator) they answer it as a turn of their own, and that turn's
+  ordinary reply with the usual prompt, context and streaming. In a world's
+  group SideStage's narrator (hidden, muted, always the one who answers the
+  asides) answers it as a turn of their own, and that turn's
   prompt also has the description of everyone in the scene (unmuted), since a
   world's group otherwise gives each turn only the speaker's own card, and
   leaves out SillyTavern's group nudge (*Group Nudge* prompt template,

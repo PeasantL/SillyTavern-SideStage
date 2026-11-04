@@ -9,7 +9,6 @@ import { characters, entitiesFilter, getCharacters, getRequestHeaders, printChar
 import { waitUntilCondition } from '../../../../utils.js';
 import { groups, selected_group } from '../../../../group-chats.js';
 import { t } from '../../../../i18n.js';
-import { getSettings } from './settings.js';
 import { getCharacterByAvatar, getCurrentGroup } from './util.js';
 
 const NARRATOR_NAME = 'Narrator';
@@ -54,24 +53,15 @@ export function isNarrator(avatar) {
 }
 
 /**
- * Who answers the asides in the open group: the member named in the "Answered
- * by" setting (matched without regard to case), or else SideStage's own
- * narrator card when the group has it, as every world's group does. Muted
- * members count: they answer asides but not rounds. The layout's opening and
- * the roster's entrance and exit lines are posted as them too, so every
- * narrator line in the chat looks the same.
- * @returns {string|null} Their avatar, or null outside a group, with the setting blank, or with neither
+ * Who answers the asides in the open group: SideStage's own narrator card,
+ * kept muted (and hidden) in every world's group, so it answers asides but not
+ * rounds. The layout's opening and the roster's entrance and exit lines are
+ * posted as it too, so every narrator line in the chat looks the same.
+ * @returns {string|null} Its avatar, or null outside a group or in a group without it
  */
 export function getOocNarrator() {
-    const name = String(getSettings().oocNarrator ?? '').trim().toLowerCase();
     const group = getCurrentGroup();
-
-    if (!name || !Array.isArray(group?.members)) {
-        return null;
-    }
-
-    const named = group.members.find(avatar => getCharacterByAvatar(avatar)?.name?.trim().toLowerCase() === name);
-    return named ?? group.members.find(isNarrator) ?? null;
+    return Array.isArray(group?.members) ? group.members.find(isNarrator) ?? null : null;
 }
 
 /**
@@ -151,21 +141,18 @@ function clearCastPrompt() {
 }
 
 /**
- * Who answers the asides in a solo chat: the card named in the "Answered by"
- * setting, or else SideStage's narrator card. Not the chat's own card: named
- * that, it answers them itself, as an ordinary reply.
- * @returns {string|null} Their avatar, or null in a group, with the setting blank, or with neither
+ * Who answers the asides in a solo chat: SideStage's narrator card (unless
+ * the chat is the narrator's own, which then answers as an ordinary reply).
+ * @returns {string|null} Its avatar, or null in a group or while there is no narrator card
  */
 export function getSoloNarrator() {
-    const name = String(getSettings().oocNarrator ?? '').trim().toLowerCase();
     const open = this_chid === undefined ? null : characters[this_chid];
 
-    if (!name || selected_group || !open || open.name?.trim().toLowerCase() === name) {
+    if (selected_group || !open || isNarratorCard(open)) {
         return null;
     }
 
-    const named = characters.find(character => character !== open && character.name?.trim().toLowerCase() === name);
-    return (named ?? characters.find(isNarratorCard))?.avatar ?? null;
+    return characters.find(isNarratorCard)?.avatar ?? null;
 }
 
 /**

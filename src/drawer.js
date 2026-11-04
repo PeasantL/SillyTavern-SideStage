@@ -91,9 +91,6 @@ const settingsHtml = `
                 <textarea id="ss_scene_request" class="text_pole textarea_compact" rows="2"
                           placeholder="Describe the current scene in detail."></textarea>
                 <small class="ss-settings-hint">Each is sent as <code>[OOC: Pause the roleplay and respond out of character. …]</code> through the message box, like a Quick Reply. Blank restores the default.</small>
-                <label for="ss_ooc_narrator">Answered by</label>
-                <input id="ss_ooc_narrator" class="text_pole" type="text" placeholder="Narrator">
-                <small class="ss-settings-hint">The group member who answers OOC, Morality and Scene as a turn of their own, so swiping the answer asks them again. Muted, they still answer, and stay out of ordinary rounds. With no member by that name, SideStage's own narrator answers: a hidden card kept, muted, in every world's group. Their turns, and swipes of them, also get the description of everyone in the scene and leave out the Group Nudge prompt, and the layout's opening and the entrance and exit lines are posted as them. In a solo chat they answer too, under their own name and portrait. Blank, and whoever the chat picks answers.</small>
             </div>
 
             <div class="ss-settings-divider"></div>
@@ -181,7 +178,6 @@ export function renderSettings() {
     $('#ss_editor_url').val(getSettings().editorUrl ?? '');
     $('#ss_morality_request').val(getSettings().moralityRequest ?? '');
     $('#ss_scene_request').val(getSettings().sceneRequest ?? '');
-    $('#ss_ooc_narrator').val(getSettings().oocNarrator ?? '');
     $('#ss_enter_line').val(getSettings().enterLine ?? '');
     $('#ss_exit_line').val(getSettings().exitLine ?? '');
 }
@@ -196,11 +192,6 @@ export function addSettings() {
 
     $('#ss_scene_request').on('input', function () {
         getSettings().sceneRequest = String($(this).val());
-        saveSettingsDebounced();
-    });
-
-    $('#ss_ooc_narrator').on('input', function () {
-        getSettings().oocNarrator = String($(this).val());
         saveSettingsDebounced();
     });
 

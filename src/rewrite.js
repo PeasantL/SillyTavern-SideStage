@@ -668,8 +668,8 @@ async function runSpellCheck() {
  * Reply does: it goes into the message box and Send is clicked, so the answer
  * is an ordinary Generate() turn — same prompt, same context, same streaming.
  *
- * In a group with a member named in the "Answered by" setting, that member
- * answers instead, as a forced turn: a swipe then regenerates as them, since
+ * In a group with SideStage's narrator (every world's group), it answers
+ * instead, as a forced turn: a swipe then regenerates as them, since
  * a group swipe goes to whoever spoke last.
  *
  * Either way, the Ghost toggle works the same: see PENDING_GHOST_KEY.
