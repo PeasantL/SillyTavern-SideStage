@@ -1,6 +1,7 @@
 /**
  * The narrator: a card SideStage makes and keeps, muted, in every world's group, so the OOC / Morality / Scene
- * asides have someone to answer them as a turn of their own (and a swipe asks them again). Marked in the card as
+ * asides have someone to answer them as a turn of their own (and a swipe asks them again), and Narrate has someone
+ * to tell the story on, in character. Marked in the card as
  * `data.extensions.sidestage.narrator`; it never shows in the character list, the roster or the image viewer, and
  * the Character Editor leaves it out of its list too. Its portrait is the Character Editor's icon (narrator.png).
  */
@@ -33,6 +34,44 @@ const CAST_PROMPT_KEY = 'sidestage_cast';
 const SOLO_PROMPT_KEY = 'sidestage_solo_narrator';
 /** On a solo chat's message: the avatar of the narrator who answered it, so a swipe asks them again. */
 const SOLO_NARRATOR_KEY = 'sidestage_narrator';
+
+/** Extension prompt that makes a group's narrator turn a Narrate turn: in character, with its direction. */
+const NARRATE_PROMPT_KEY = 'sidestage_narrate';
+/** On a narrator's message written by Narrate: its direction ('' for none), so a swipe narrates again. */
+const NARRATE_KEY = 'sidestage_narrate';
+
+/**
+ * A Narrate turn in progress in a group: the narrator tells the story on, in
+ * character, following the direction typed in the message box. Unlike the
+ * asides it is given nobody's description: only the chat and the lorebook.
+ * @type {{direction: string}|null}
+ */
+let narrateTurn = null;
+
+/**
+ * The instruction for a Narrate turn.
+ * @param {string} name The narrator's name
+ * @param {string} direction What was typed in the message box (may be blank)
+ * @returns {string}
+ */
+function buildNarratePrompt(name, direction) {
+    const head = substituteParams(`[This reply is ${name}'s, the narrator's, not any character's: in character, narrate `
+        + 'what happens next in the scene: the world, what goes on around the characters, and any side characters '
+        + 'in it, who may speak. Do not write {{user}}\'s words or actions, or the words of the roleplay\'s characters.');
+    const said = substituteParams(String(direction ?? '').trim());
+    return said ? `${head}\nDirection for this reply: ${said}]` : `${head}]`;
+}
+
+/** Starts a group's Narrate turn: the narrator's next turn (forced by the caller) is told the story on. */
+export function beginNarrateTurn(direction) {
+    narrateTurn = { direction: String(direction ?? '') };
+}
+
+/** Ends it, whether or not the turn came. */
+export function endNarrateTurn() {
+    narrateTurn = null;
+    setExtensionPrompt(NARRATE_PROMPT_KEY, '', extension_prompt_types.IN_CHAT, 0);
+}
 
 /** Key under ST's entity filter functions that keeps the narrator out of the character list. */
 const LIST_FILTER_KEY = 'sidestageNarrator';
@@ -96,8 +135,43 @@ function buildCastPrompt(answerer) {
 function onMemberDrafted(chId) {
     const answerer = getOocNarrator();
     answererTurn = !!answerer && characters[chId]?.avatar === answerer;
-    const text = answererTurn ? buildCastPrompt(answerer) : '';
+    const narrating = answererTurn && !!narrateTurn;
+    // A Narrate turn sees only the chat and the lorebook: no descriptions of the cast.
+    const text = answererTurn && !narrating ? buildCastPrompt(answerer) : '';
     setExtensionPrompt(CAST_PROMPT_KEY, text, extension_prompt_types.IN_PROMPT, 0, false, extension_prompt_roles.SYSTEM);
+    const narrate = narrating ? buildNarratePrompt(characters[chId].name, narrateTurn.direction) : '';
+    setExtensionPrompt(NARRATE_PROMPT_KEY, narrate, extension_prompt_types.IN_CHAT, 0, false, extension_prompt_roles.SYSTEM);
+}
+
+/**
+ * Marks a group narrator message written by a Narrate turn with its
+ * direction, so a swipe of it narrates again.
+ * @param {number} id
+ */
+function markNarrated(id) {
+    const message = chat[id];
+    const answerer = getOocNarrator();
+
+    if (!narrateTurn || !selected_group || !message || message.is_user || message.is_system || !answerer || message.original_avatar !== answerer) {
+        return;
+    }
+
+    message.extra = message.extra && typeof message.extra === 'object' ? message.extra : {};
+    message.extra[NARRATE_KEY] = narrateTurn.direction;
+}
+
+/** A swipe or regeneration of a group's Narrate turn narrates again, with the same direction. */
+function onGroupGenerationStarted(type, _params, dryRun) {
+    if (dryRun || !selected_group || narrateTurn || !['swipe', 'regenerate'].includes(type)) {
+        return;
+    }
+
+    const last = chat[chat.length - 1];
+    const answerer = getOocNarrator();
+
+    if (last && !last.is_user && answerer && last.original_avatar === answerer && typeof last.extra?.[NARRATE_KEY] === 'string') {
+        beginNarrateTurn(last.extra[NARRATE_KEY]);
+    }
 }
 
 /** Whether the group member being drafted is the aside answerer: their turns leave out the group nudge. */
@@ -138,6 +212,7 @@ function dropGroupNudge(data) {
 function clearCastPrompt() {
     answererTurn = false;
     setExtensionPrompt(CAST_PROMPT_KEY, '', extension_prompt_types.IN_PROMPT, 0);
+    endNarrateTurn();
 }
 
 /**
@@ -156,11 +231,12 @@ export function getSoloNarrator() {
 }
 
 /**
- * The solo chat's narrator turn in progress: who answers, and the first
- * message index that is theirs. Their reply is generated with the chat's own
- * card (a solo chat has no other) and told it is the narrator's; then it is
- * posted under the narrator's name and portrait.
- * @type {{answerer: string, from: number}|null}
+ * The solo chat's narrator turn in progress: who answers, the first message
+ * index that is theirs, and for a Narrate turn its direction (null for an
+ * aside). Their reply is generated with the chat's own card (a solo chat has
+ * no other) and told it is the narrator's; then it is posted under the
+ * narrator's name and portrait.
+ * @type {{answerer: string, from: number, direction: string|null}|null}
  */
 let soloTurn = null;
 
@@ -171,6 +247,10 @@ function buildSoloPrompt(answerer) {
 
     if (!narrator || !open) {
         return '';
+    }
+
+    if (typeof soloTurn?.direction === 'string') {
+        return buildNarratePrompt(narrator.name, soloTurn.direction);
     }
 
     const description = substituteParams(String(narrator.description ?? '').trim(), { name2Override: narrator.name });
@@ -196,6 +276,11 @@ function relabel(id) {
     message.force_avatar = getThumbnailUrl('avatar', narrator.avatar);
     message.extra = message.extra && typeof message.extra === 'object' ? message.extra : {};
     message.extra[SOLO_NARRATOR_KEY] = narrator.avatar;
+    if (typeof soloTurn.direction === 'string') {
+        message.extra[NARRATE_KEY] = soloTurn.direction;
+    } else {
+        delete message.extra[NARRATE_KEY];
+    }
 
     const element = document.querySelector(`#chat .mes[mesid="${id}"]`);
     if (element) {
@@ -208,9 +293,13 @@ function relabel(id) {
     }
 }
 
-/** Starts a solo chat's narrator turn: the next reply is theirs. */
-export function beginSoloNarratorTurn(answerer) {
-    soloTurn = { answerer, from: chat.length };
+/**
+ * Starts a solo chat's narrator turn: the next reply is theirs.
+ * @param {string} answerer
+ * @param {string|null} [direction] For a Narrate turn, its direction; null for an aside
+ */
+export function beginSoloNarratorTurn(answerer, direction = null) {
+    soloTurn = { answerer, from: chat.length, direction };
 }
 
 /** Ends it: the prompt goes, and whatever they posted is put under their name. */
@@ -241,7 +330,8 @@ function onSoloGenerationStarted(type, _params, dryRun) {
         const answerer = last && !last.is_user ? last.extra?.[SOLO_NARRATOR_KEY] : null;
 
         if (answerer && getCharacterByAvatar(answerer)) {
-            soloTurn = { answerer, from: chat.length - 1 };
+            const direction = typeof last.extra?.[NARRATE_KEY] === 'string' ? last.extra[NARRATE_KEY] : null;
+            soloTurn = { answerer, from: chat.length - 1, direction };
         }
     }
 
@@ -250,7 +340,7 @@ function onSoloGenerationStarted(type, _params, dryRun) {
     }
 }
 
-/** Gives the aside answerer the scene's descriptions (and no group nudge) on each of their turns, and runs solo chats' narrator turns. */
+/** Gives the aside answerer the scene's descriptions (and no group nudge) on each of their turns, or a Narrate turn's direction instead, and runs solo chats' narrator turns. */
 export function watchNarratorTurns() {
     eventSource.on(event_types.GROUP_MEMBER_DRAFTED, onMemberDrafted);
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, dropGroupNudge);
@@ -261,6 +351,8 @@ export function watchNarratorTurns() {
         }
     }
 
+    eventSource.on(event_types.GENERATION_STARTED, onGroupGenerationStarted);
+    eventSource.on(event_types.MESSAGE_RECEIVED, id => markNarrated(Number(id)));
     eventSource.on(event_types.GENERATION_STARTED, onSoloGenerationStarted);
     // While their reply streams in, and once it lands, it shows as theirs.
     eventSource.on(event_types.STREAM_TOKEN_RECEIVED, () => soloTurn && relabel(chat.length - 1));

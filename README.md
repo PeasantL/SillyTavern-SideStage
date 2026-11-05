@@ -58,9 +58,9 @@ group.
 
 ### Rewrite
 
-Six buttons in a row above the message box, reachable without opening the
-panel: three rewrites, then a rule, then three out-of-character asides. Each is
-a one-shot request of its own rather than a trip through the chat's own
+Seven buttons in a row above the message box, reachable without opening the
+panel: three rewrites, then a rule, then Narrate and three out-of-character
+asides. Each rewrite is a one-shot request of its own rather than a trip through the chat's own
 generation, so none of them rebuild or re-send the prompt your conversation is
 built on: a rewrite costs one small call and leaves the chat where it was.
 
@@ -79,6 +79,18 @@ built on: a rewrite costs one small call and leaves the chat where it was.
   and clear grammar errors; your word choice, tone and line breaks are left
   alone, as are dialect, fragments, invented names and roleplay formatting.
   Nothing is sent to the chat, and `{{macros}}` come back intact.
+- **Narrate**: The narrator takes a turn in character and tells the story on:
+  the world, what goes on around the characters, and side characters, who may
+  speak. What you have typed in the message box is its direction (“the
+  innkeeper says the rooms are full”) and is not posted as your turn; with the
+  box empty, the narrator decides. In a world's group it is SideStage's
+  narrator's turn, as for the asides; in a solo chat the reply is generated
+  with the chat's card, told it is the narrator's, and posted under the
+  narrator's name and portrait. Its prompt is the chat and the lorebook, with
+  none of the asides' descriptions of the cast (in a solo chat SillyTavern
+  still builds it with the chat's card). It is an ordinary turn: never ghosted,
+  and a swipe of it narrates again with the same direction. It needs a
+  narrator, so it does nothing in a group that is not a world's.
 - **OOC**: Wraps what you have typed as `[OOC: ...]` and sends it the way a
   Quick Reply does — into the message box, then Send — so the answer is an
   ordinary reply with the usual prompt, context and streaming. In a world's

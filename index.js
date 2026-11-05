@@ -12,7 +12,8 @@
  * Character Editor), scene (mutes, openings, turns, Author's Note), rewrite
  * (the button row), panel (the strip and roster), drawer (settings), images,
  * tablet, lock (the Character Editor lock), solo (a world card's solo chat
- * and inviting into it) and narrator (the hidden card that answers the asides).
+ * and inviting into it) and narrator (the hidden card that answers the asides
+ * and takes the Narrate turns).
  */
 import { eventSource, event_types } from '../../../../script.js';
 import { applyEditorLinks, getSettings } from './src/settings.js';

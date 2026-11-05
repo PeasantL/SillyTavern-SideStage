@@ -9,7 +9,7 @@ import { waitUntilCondition } from '../../../../utils.js';
 import { t } from '../../../../i18n.js';
 import { getSettings, rosterDefaults } from './settings.js';
 import { forceTurn, sendUserTurnOnly } from './scene.js';
-import { beginSoloNarratorTurn, endSoloNarratorTurn, getOocNarrator, getSoloNarrator } from './narrator.js';
+import { beginNarrateTurn, beginSoloNarratorTurn, endNarrateTurn, endSoloNarratorTurn, getOocNarrator, getSoloNarrator } from './narrator.js';
 
 /**
  * The footer's three rewrite actions.
@@ -832,6 +832,61 @@ async function runOocTurn(oocLine) {
 }
 
 /**
+ * Has the narrator take a turn in character: what is typed in the message box
+ * is its direction, not a message (blank leaves it to the narrator). In a
+ * world's group it is a forced turn of SideStage's narrator; in a solo chat the
+ * reply is generated with the chat's card, told it is the narrator's, and
+ * posted under the narrator's name and portrait. A swipe of it narrates again.
+ * It is no aside: never ghosted, and a turn that moves the chat on.
+ * @returns {Promise<void>}
+ */
+async function runNarrate() {
+    const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
+
+    if (!textarea) {
+        return;
+    }
+
+    const narrator = getOocNarrator();
+    const soloNarrator = narrator ? null : getSoloNarrator();
+
+    if (!narrator && !soloNarrator) {
+        toastr.info(t`Narrate needs SideStage's narrator: open a world's group or a solo chat.`);
+        return;
+    }
+
+    const direction = String(textarea.value ?? '').trim();
+    const before = chat.length;
+
+    // The box is the direction, not your turn: emptied so nothing posts it.
+    textarea.value = '';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+
+    try {
+        if (narrator) {
+            beginNarrateTurn(direction);
+            await forceTurn(narrator);
+        } else {
+            beginSoloNarratorTurn(soloNarrator, direction);
+            await Generate('normal');
+        }
+        await waitUntilCondition(() => !isGenerating(), OOC_TURN_TIMEOUT, 200).catch(() => {});
+    } finally {
+        if (narrator) {
+            endNarrateTurn();
+        } else {
+            await endSoloNarratorTurn();
+        }
+
+        // No turn came (refused, stopped before it began): the direction goes back in the box.
+        if (chat.length === before && direction && !textarea.value.trim()) {
+            textarea.value = direction;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    }
+}
+
+/**
  * Wraps whatever is typed in the message box as an OOC question and sends it.
  * @returns {Promise<void>}
  */
@@ -893,13 +948,14 @@ export function mountAssistBar() {
     actions.classList.add('gr-assist-actions');
     bar.append(actions);
 
-    // Two groups of three, split by a rule: the rewrites edit text that is
-    // already there, the asides post a new exchange. `null` is the divider.
+    // Two groups split by a rule: the rewrites edit text that is already
+    // there; Narrate and the asides post a new turn. `null` is the divider.
     for (const entry of [
         ['fa-user-pen', t`Perspective`, t`Correct the perspective of the latest character reply`, runPerspective],
         ['fa-wand-magic-sparkles', t`Directive`, t`Rewrite the latest character reply, following what you have typed in the message box`, runDirective],
         ['fa-spell-check', t`Spell check`, t`Copy-edit what you have typed in the message box`, runSpellCheck],
         null,
+        ['fa-masks-theater', t`Narrate`, t`Have the narrator tell the story on, in character, following what you have typed in the message box (or as they see fit when it is empty)`, runNarrate],
         ['fa-comment-dots', t`OOC`, t`Send what you have typed in the message box as an out-of-character question`, runOOC],
         ['fa-skull', t`Morality`, t`Ask, out of character, about the evil of the current scene`, runMorality],
         ['fa-image', t`Scene`, t`Ask, out of character, for a description of the current scene`, runScene],
