@@ -402,13 +402,25 @@ export async function forceTurn(avatar) {
 }
 
 /**
+ * Sets the message box the way typing would, so ST's autosize and its draft follow.
+ * @param {HTMLTextAreaElement} textarea
+ * @param {string} text
+ */
+function setBox(textarea, text) {
+    textarea.value = text;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/**
  * Brings a member into the scene or sends them off it, in the chat as well as
  * in the group: the roster's first toggle.
  *
  * Entering: they are unmuted, the narrator says they entered, then they take a
  * full turn. Leaving: they take a full turn, the narrator says they left, then
  * they are muted. Either way the turn is told, for that one reply, that they
- * are arriving or going. Anything typed in the message box is posted first.
+ * are arriving or going. Anything typed in the message box is, for an
+ * entrance, its direction, not posted, and back in the box if the turn brings
+ * no reply; for an exit it is posted first.
  * A leaving turn that brings no reply (stopped, failed) leaves them in the
  * scene, with no narrator line.
  * @param {string} avatar Avatar file name of the character
@@ -435,7 +447,8 @@ export async function moveInOrOut(avatar, entering) {
     }
 
     const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
-    if (String(textarea?.value ?? '').trim()) {
+    const typed = String(textarea?.value ?? '').trim();
+    if (typed && !entering) {
         await sendUserTurnOnly();
     }
 
@@ -453,9 +466,15 @@ export async function moveInOrOut(avatar, entering) {
         }
     }
 
+    // Out of the box before the turn, or forceTurn() would post it.
+    const direction = entering ? substituteParams(typed, { name2Override: character.name }) : '';
+    if (entering && typed) {
+        setBox(textarea, '');
+    }
+
     const before = chat.length;
     const nudge = entering
-        ? `[${character.name} has just entered the scene. Write their arrival.]`
+        ? `[${character.name} has just entered the scene. Write their arrival.${direction ? `\nDirection for this entrance: ${direction}` : ''}]`
         : `[${character.name} is leaving the scene. Write their exit.]`;
 
     setExtensionPrompt(MOVE_PROMPT_KEY, nudge, extension_prompt_types.IN_CHAT, 0, false, extension_prompt_roles.SYSTEM);
@@ -465,11 +484,17 @@ export async function moveInOrOut(avatar, entering) {
         setExtensionPrompt(MOVE_PROMPT_KEY, '', extension_prompt_types.IN_CHAT, 0);
     }
 
+    const replied = chat.slice(before).some(x => !x.is_user && x.original_avatar === avatar);
+
     if (entering) {
+        if (typed && !replied && !textarea.value) {
+            setBox(textarea, typed);
+        }
+
         return true;
     }
 
-    if (!chat.slice(before).some(x => !x.is_user && x.original_avatar === avatar)) {
+    if (!replied) {
         toastr.info(t`${character.name} had no reply, so they are still in the scene.`);
         return false;
     }

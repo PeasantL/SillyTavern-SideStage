@@ -216,9 +216,9 @@ function makeCardRow(avatar, solo = null) {
     const member = makeIconToggle('gr-member', 'fa-user-check', isHost
         ? t`This is their chat`
         : solo
-            ? t`Invite them: this chat moves into a new chat of the "${solo.group.name}" group, where they enter the scene`
+            ? t`Invite them: this chat moves into a new chat of the "${solo.group.name}" group, where they enter the scene. What's typed in the message box guides how they enter`
             : isMuted
-                ? t`Out of the scene. Click to bring them in: the narrator says they entered, then they speak`
+                ? t`Out of the scene. Click to bring them in: the narrator says they entered, then they speak. What's typed in the message box guides how they enter`
                 : t`In the scene. Click to send them off: they speak, then the narrator says they left`);
     member.input.checked = !isMuted;
     member.input.disabled = !(group || solo) || !character || isHost;

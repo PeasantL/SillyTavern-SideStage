@@ -77,8 +77,7 @@ function toGroupMessages(character) {
 /**
  * Invites a world member into the open solo chat: the chat moves into a new chat of the world's group,
  * with only its card in the scene, that chat is opened, and the guest enters as the roster's first toggle
- * brings anyone in (moveInOrOut()). Anything typed in the message box is posted there, ahead of the
- * entrance. The solo chat is deleted only once the group's copy is saved and open, so a move that fails
+ * brings anyone in (moveInOrOut()). Anything typed in the message box directs that entrance. The solo chat is deleted only once the group's copy is saved and open, so a move that fails
  * on the way leaves it where it was.
  * @param {string} avatar The guest's avatar file name
  * @returns {Promise<boolean>} Whether the chat was carried on in the group
@@ -136,7 +135,7 @@ export async function inviteToWorldGroup(avatar) {
     group.disabled_members = group.members.filter(x => x !== character.avatar);
     await editGroup(group.id, true, false);
 
-    // Held aside while the chat switches, then put back for moveInOrOut() to post first.
+    // Held aside while the chat switches, then put back for moveInOrOut() to use as the entrance's direction.
     const textarea = /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea'));
     const typed = String(textarea?.value ?? '');
     setTyped(textarea, '');
