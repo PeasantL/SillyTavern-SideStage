@@ -23,6 +23,14 @@ const NOTE_PROMPT_KEY = 'note_prompt';
 const NOTE_APPLIED_KEY = 'sidestage_note_applied';
 /** Extension prompt that tells the model, for one turn, that its character is entering or leaving. */
 const MOVE_PROMPT_KEY = 'sidestage_move';
+/** On an entrance's reply: its direction ('' for none), so a swipe of it is an entrance too. */
+const ENTRANCE_KEY = 'sidestage_entrance';
+
+/**
+ * The entrance being written: moveInOrOut()'s, or a swipe of one (`swipe`).
+ * @type {{avatar: string, direction: string, swipe?: boolean}|null}
+ */
+let entrance = null;
 
 
 /**
@@ -412,6 +420,76 @@ function setBox(textarea, text) {
 }
 
 /**
+ * Starts an entrance's turn: until endMoveTurn(), the reply is told it is their arrival.
+ * @param {string} avatar
+ * @param {string} name
+ * @param {string} direction What was typed in the message box (may be blank)
+ * @param {boolean} [swipe] Whether this is a swipe of an entrance's reply
+ */
+function beginEntrance(avatar, name, direction, swipe = false) {
+    entrance = { avatar, direction, swipe };
+    setMovePrompt(`[${name} has just entered the scene. Write their arrival.${direction ? `\nDirection for this entrance: ${direction}` : ''}]`);
+}
+
+/** @param {string} text For the next reply only */
+function setMovePrompt(text) {
+    setExtensionPrompt(MOVE_PROMPT_KEY, text, extension_prompt_types.IN_CHAT, 0, false, extension_prompt_roles.SYSTEM);
+}
+
+function endMoveTurn() {
+    entrance = null;
+    setExtensionPrompt(MOVE_PROMPT_KEY, '', extension_prompt_types.IN_CHAT, 0);
+}
+
+/**
+ * Marks an entrance's reply with its direction. A swipe keeps the message's
+ * extra, so every swipe of it carries the mark.
+ * @param {number} id
+ */
+function markEntrance(id) {
+    const message = chat[id];
+
+    if (!entrance || !message || message.is_user || message.is_system || message.original_avatar !== entrance.avatar) {
+        return;
+    }
+
+    message.extra = message.extra && typeof message.extra === 'object' ? message.extra : {};
+    message.extra[ENTRANCE_KEY] = entrance.direction;
+}
+
+/**
+ * A swipe of an entrance's reply is an entrance again, with the same direction.
+ * Fires again for the group's own Generate(), which finds the same mark. Any
+ * other generation ends a swipe's turn that never got as far as finishing.
+ */
+function onEntranceGeneration(type, _params, dryRun) {
+    if (dryRun || type === 'quiet' || (entrance && !entrance.swipe)) {
+        return;
+    }
+
+    const last = chat[chat.length - 1];
+    const direction = last?.extra?.[ENTRANCE_KEY];
+
+    if (type === 'swipe' && selected_group && !last.is_user && typeof direction === 'string') {
+        beginEntrance(last.original_avatar, last.name, direction, true);
+    } else if (entrance) {
+        endMoveTurn();
+    }
+}
+
+/** Keeps entrances' directions for their swipes, and the prompt from outliving the turn. */
+export function watchEntrances() {
+    eventSource.on(event_types.GENERATION_STARTED, onEntranceGeneration);
+    eventSource.on(event_types.MESSAGE_RECEIVED, id => markEntrance(Number(id)));
+
+    for (const type of [event_types.GROUP_WRAPPER_FINISHED, event_types.GENERATION_STOPPED, event_types.CHAT_CHANGED]) {
+        if (type) {
+            eventSource.on(type, () => entrance?.swipe && endMoveTurn());
+        }
+    }
+}
+
+/**
  * Brings a member into the scene or sends them off it, in the chat as well as
  * in the group: the roster's first toggle.
  *
@@ -420,7 +498,8 @@ function setBox(textarea, text) {
  * they are muted. Either way the turn is told, for that one reply, that they
  * are arriving or going. Anything typed in the message box is, for an
  * entrance, its direction, not posted, and back in the box if the turn brings
- * no reply; for an exit it is posted first.
+ * no reply, and a swipe of the reply enters again with it; for an exit it is
+ * posted first.
  * A leaving turn that brings no reply (stopped, failed) leaves them in the
  * scene, with no narrator line.
  * @param {string} avatar Avatar file name of the character
@@ -473,15 +552,17 @@ export async function moveInOrOut(avatar, entering) {
     }
 
     const before = chat.length;
-    const nudge = entering
-        ? `[${character.name} has just entered the scene. Write their arrival.${direction ? `\nDirection for this entrance: ${direction}` : ''}]`
-        : `[${character.name} is leaving the scene. Write their exit.]`;
 
-    setExtensionPrompt(MOVE_PROMPT_KEY, nudge, extension_prompt_types.IN_CHAT, 0, false, extension_prompt_roles.SYSTEM);
+    if (entering) {
+        beginEntrance(avatar, character.name, direction);
+    } else {
+        setMovePrompt(`[${character.name} is leaving the scene. Write their exit.]`);
+    }
+
     try {
         await forceTurn(avatar);
     } finally {
-        setExtensionPrompt(MOVE_PROMPT_KEY, '', extension_prompt_types.IN_CHAT, 0);
+        endMoveTurn();
     }
 
     const replied = chat.slice(before).some(x => !x.is_user && x.original_avatar === avatar);
