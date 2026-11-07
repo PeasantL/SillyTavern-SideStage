@@ -130,10 +130,10 @@ built on: a rewrite costs one small call and leaves the chat where it was.
 ### Images
 
 - **One strip**: The images are the strip's bottom section, under the roster, full strip width and shaped to each image. Nothing floats, drags or resizes; the strip is fixed furniture beside the chat.
-- **Auto-Open Viewer**: When the character on stage has images, the image section appears; when they have none, it goes away.
+- **Auto-Open Viewer**: The image section follows the character on stage. A card with no images of its own shows its portrait.
 - **Greeting-Aware**: Opens on the image referenced by the greeting currently on screen, and follows along when you swipe to an alternate greeting or start a new chat. Toggled by **Change with Greeting**.
 - **Deep Scan**: Finds image URLs hidden anywhere in the character's data (Description, Personality, Scenario, Alternate Greetings, character book, and so on).
-- **Group Chat Support**: In a group, the images follow one member: the one focused in the roster, else whoever is taking the turn, else whoever spoke last. With none of those, every member's images are merged into one list. The narrator counts too: on their turn, and after it, the viewer shows their portrait, in a solo chat as well.
+- **Group Chat Support**: In a group, the images follow one member: the one focused in the roster, else whoever is taking the turn, else whoever spoke last. With none of those, every member's images are merged into one list. Anyone with a card counts, the narrator included (in a solo chat too), even a turn since ghosted or someone who has left the group; only your own turns never change it.
 - **Viewer**: Slideshow navigation (`<` `>`, arrow keys), shown on hover or tap. `Escape` closes it until the chat changes.
 - **Gallery**: A thumbnail grid of every image found, reached from the viewer's gallery button. It takes the roster's place in the strip until closed.
 - **Chat-Aware Cleanup**: Closing a chat closes the viewer and gallery.

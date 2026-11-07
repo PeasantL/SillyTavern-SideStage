@@ -3,8 +3,8 @@
  * asides have someone to answer them as a turn of their own (and a swipe asks them again), and Narrate has someone
  * to tell the story on, in character. Marked in the card as
  * `data.extensions.sidestage.narrator`; it never shows in the character list or the roster, and the Character Editor
- * leaves it out of its list too. The image viewer shows it only for its own turns. Its portrait is the Character
- * Editor's icon (narrator.png).
+ * leaves it out of its list too. The image viewer shows it like anyone else. Its portrait is the Character Editor's
+ * icon (narrator.png).
  */
 import { oai_settings } from '../../../../openai.js';
 import { characters, entitiesFilter, getCharacters, getRequestHeaders, printCharactersDebounced, eventSource, event_types, substituteParams, setExtensionPrompt, extension_prompt_types, extension_prompt_roles, chat, this_chid, getThumbnailUrl, saveChatConditional, isGenerating } from '../../../../../script.js';

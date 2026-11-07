@@ -53,13 +53,14 @@ function findGroup(ctx) {
   return (ctx.groups || []).find((g) => String(g.id) === String(ctx.groupId)) ?? null;
 }
 
-// Whoever last took a turn, ignoring the user's own messages and system ones.
+// Whoever last took a turn: anyone with a card, ghosted turns too, never the
+// user. A message from no card (SillyTavern's own system lines) has no images.
 function getLastSpeakerAvatar(ctx) {
   const chat = Array.isArray(ctx?.chat) ? ctx.chat : [];
 
   for (let i = chat.length - 1; i >= 0; i--) {
     const message = chat[i];
-    if (!message || message.is_user || message.is_system) continue;
+    if (!message || message.is_user) continue;
     if (message.original_avatar) return message.original_avatar;
 
     // Messages written before original_avatar existed only carry a name.
@@ -84,28 +85,28 @@ function getActiveCharacters(ctx) {
     const everyone = findGroup(ctx)?.members;
     if (!Array.isArray(everyone)) return [];
 
-    // Show one member's images rather than the whole group's: a roster pin wins,
-    // then whoever is taking the turn right now, then whoever spoke last, the
-    // narrator included. All three are checked against the member list, so a pin
-    // or a speaker who has since left the group falls through to the group as a
-    // whole — as does a chat where nobody has spoken yet.
+    // Show one character's images rather than the whole group's: a roster pin
+    // wins, then whoever is taking the turn right now, then whoever spoke last,
+    // the narrator and anyone who has since left the group included. A chat
+    // where nobody has spoken yet shows the group as a whole.
     const only = [focusedAvatar, draftedAvatar, getLastSpeakerAvatar(ctx)].find(
-      (avatar) => avatar && everyone.includes(avatar),
+      (avatar) => avatar && allCharacters.some((c) => c.avatar === avatar),
     );
 
-    return (only ? [only] : everyone.filter((avatar) => !isNarrator(avatar)))
+    return (only ? [only] : everyone)
       .map((avatar) => allCharacters.find((c) => c.avatar === avatar))
       .filter(Boolean);
   }
 
   const id = ctx.characterId;
   if (id === undefined || id === null || id === "") return [];
-  // The narrator's solo turns are posted under its name, so they end on it too.
+  // Someone else's turn in a solo chat (the narrator's) ends on them. By name
+  // alone a same-named card would pass for the open one, so that doesn't count.
+  const char = allCharacters[id];
   const last = getLastSpeakerAvatar(ctx);
-  const char = isNarrator(last)
-    ? allCharacters.find((c) => c.avatar === last)
-    : allCharacters[id];
-  return char ? [char] : [];
+  const other = allCharacters.find((c) => c.avatar === last && c.name !== char?.name);
+  const shown = other ?? char;
+  return shown ? [shown] : [];
 }
 
 function getActiveLabel(ctx) {
@@ -164,9 +165,11 @@ function scanAndGetImages() {
 
   const uniqueImages = new Set();
   chars.forEach((char) => {
-    // The narrator's card has no images in its text: its portrait is its image.
-    if (isNarrator(char.avatar)) uniqueImages.add(`/characters/${encodeURIComponent(char.avatar)}`);
-    deepScanForImages(char, uniqueImages);
+    const own = new Set();
+    deepScanForImages(char, own);
+    // A card with no images in its text (the narrator's) shows its portrait.
+    if (!own.size && char.avatar) own.add(`/characters/${encodeURIComponent(char.avatar)}`);
+    own.forEach((url) => uniqueImages.add(url));
   });
 
   lastScannedImages = Array.from(uniqueImages);
@@ -193,7 +196,8 @@ function getGreetingImages() {
 // card scan missed (macro substitution can rewrite a URL at render time).
 function getGreetingImageIndex(images) {
   // A chat that ended on the narrator stays on them, not on the opening's picture.
-  if (getActiveCharacters(getSTContext()).some((c) => isNarrator(c.avatar))) return -1;
+  const active = getActiveCharacters(getSTContext());
+  if (active.length === 1 && isNarrator(active[0].avatar)) return -1;
 
   const greetingImages = getGreetingImages();
   if (greetingImages.length === 0) return -1;
