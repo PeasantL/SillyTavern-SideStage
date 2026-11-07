@@ -13,7 +13,7 @@ import { getActiveLayout, getActiveStage, getGroupWorld, getStage } from './worl
 import { getSoloScene } from './solo.js';
 import { refreshPanel } from './panel.js';
 import { getSettings, rosterDefaults } from './settings.js';
-import { getOocNarrator } from './narrator.js';
+import { getOocNarrator, isNarrator } from './narrator.js';
 
 /** Chat-scoped display name for narrator messages, set by ST's /sysname. */
 const NARRATOR_NAME_KEY = 'narrator_name';
@@ -25,6 +25,8 @@ const NOTE_APPLIED_KEY = 'sidestage_note_applied';
 const MOVE_PROMPT_KEY = 'sidestage_move';
 /** On an entrance's reply: its direction ('' for none), so a swipe of it is an entrance too. */
 const ENTRANCE_KEY = 'sidestage_entrance';
+/** Chat-scoped: who is muted in this chat, as {avatar: muted}, since the group itself has one list for all its chats. */
+const SCENE_KEY = 'sidestage_scene';
 
 /**
  * The entrance being written: moveInOrOut()'s, or a swipe of one (`swipe`).
@@ -96,6 +98,74 @@ export async function setMuted(avatar, shouldMute) {
     refreshGroupControlPanel();
     await eventSource.emit(event_types.GROUP_UPDATED);
     return true;
+}
+
+/** @returns {Record<string, boolean>} The open group's mutes as a chat keeps them. The narrator is always muted, so it isn't kept. */
+function currentScene(group) {
+    return Object.fromEntries(group.members
+        .filter(avatar => !isNarrator(avatar))
+        .map(avatar => [avatar, !!group.disabled_members?.includes(avatar)]));
+}
+
+/**
+ * Notes the group's mutes in the open chat, on every change (SillyTavern's own
+ * group panel included). Saved at once rather than debounced: a debounced save
+ * writes whichever chat is open when it fires, so leaving the chat straight
+ * after a mute would lose it. A chat still empty is left to the save that
+ * posts its opening.
+ * @returns {Promise<void>}
+ */
+export async function rememberScene() {
+    const group = getCurrentGroup();
+
+    // No integrity: the chat is between two loads, and this isn't its metadata.
+    if (!Array.isArray(group?.members) || !chat_metadata.integrity) {
+        return;
+    }
+
+    const scene = currentScene(group);
+    const saved = chat_metadata[SCENE_KEY];
+
+    if (saved && JSON.stringify(scene) === JSON.stringify(saved)) {
+        return;
+    }
+
+    chat_metadata[SCENE_KEY] = scene;
+
+    if (chat.length) {
+        await saveChatConditional();
+    }
+}
+
+/**
+ * Puts the group's mutes back as the chat just opened left them. A member the
+ * chat has never seen keeps what the group says. A chat that has no mutes of
+ * its own yet (a new one, or one from before they were kept) takes the group's
+ * as they stand, in memory only, so just looking at a chat doesn't rewrite it.
+ * @returns {Promise<void>}
+ */
+export async function restoreScene() {
+    const group = getCurrentGroup();
+
+    if (!Array.isArray(group?.members)) {
+        return;
+    }
+
+    const saved = chat_metadata[SCENE_KEY];
+    const was = Array.isArray(group.disabled_members) ? group.disabled_members : [];
+    const muted = saved
+        ? group.members.filter(avatar => saved[avatar] ?? was.includes(avatar))
+        : was;
+    const changed = muted.length !== was.length || muted.some(avatar => !was.includes(avatar));
+
+    group.disabled_members = muted;
+    chat_metadata[SCENE_KEY] = currentScene(group);
+
+    if (changed) {
+        await editGroup(group.id, true, false);
+        refreshGroupControlPanel();
+        await eventSource.emit(event_types.GROUP_UPDATED);
+    }
 }
 
 /**

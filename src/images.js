@@ -81,27 +81,30 @@ function getActiveCharacters(ctx) {
   const allCharacters = ctx.characters || [];
 
   if (ctx.groupId) {
-    // The narrator has no images of its own; its turns fall through to the group.
-    const members = findGroup(ctx)?.members?.filter((avatar) => !isNarrator(avatar));
-    if (!Array.isArray(members)) return [];
+    const everyone = findGroup(ctx)?.members;
+    if (!Array.isArray(everyone)) return [];
 
     // Show one member's images rather than the whole group's: a roster pin wins,
-    // then whoever is taking the turn right now, then whoever spoke last. All
-    // three are checked against the member list, so a pin or a speaker who has
-    // since left the group falls through to the group as a whole — as does a
-    // chat where nobody has spoken yet.
+    // then whoever is taking the turn right now, then whoever spoke last, the
+    // narrator included. All three are checked against the member list, so a pin
+    // or a speaker who has since left the group falls through to the group as a
+    // whole — as does a chat where nobody has spoken yet.
     const only = [focusedAvatar, draftedAvatar, getLastSpeakerAvatar(ctx)].find(
-      (avatar) => avatar && members.includes(avatar),
+      (avatar) => avatar && everyone.includes(avatar),
     );
 
-    return (only ? [only] : members)
+    return (only ? [only] : everyone.filter((avatar) => !isNarrator(avatar)))
       .map((avatar) => allCharacters.find((c) => c.avatar === avatar))
       .filter(Boolean);
   }
 
   const id = ctx.characterId;
   if (id === undefined || id === null || id === "") return [];
-  const char = allCharacters[id];
+  // The narrator's solo turns are posted under its name, so they end on it too.
+  const last = getLastSpeakerAvatar(ctx);
+  const char = isNarrator(last)
+    ? allCharacters.find((c) => c.avatar === last)
+    : allCharacters[id];
   return char ? [char] : [];
 }
 
@@ -160,7 +163,11 @@ function scanAndGetImages() {
   if (chars.length === 0) return null;
 
   const uniqueImages = new Set();
-  chars.forEach((char) => deepScanForImages(char, uniqueImages));
+  chars.forEach((char) => {
+    // The narrator's card has no images in its text: its portrait is its image.
+    if (isNarrator(char.avatar)) uniqueImages.add(`/characters/${encodeURIComponent(char.avatar)}`);
+    deepScanForImages(char, uniqueImages);
+  });
 
   lastScannedImages = Array.from(uniqueImages);
   lastScannedCharName = getActiveLabel(ctx);
@@ -185,6 +192,9 @@ function getGreetingImages() {
 // references none. Mutates `images` when the greeting points at something the
 // card scan missed (macro substitution can rewrite a URL at render time).
 function getGreetingImageIndex(images) {
+  // A chat that ended on the narrator stays on them, not on the opening's picture.
+  if (getActiveCharacters(getSTContext()).some((c) => isNarrator(c.avatar))) return -1;
+
   const greetingImages = getGreetingImages();
   if (greetingImages.length === 0) return -1;
 

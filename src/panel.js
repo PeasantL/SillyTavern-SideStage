@@ -7,7 +7,7 @@ import { t } from '../../../../i18n.js';
 import { openInEditor } from './settings.js';
 import { getCharacterByAvatar, getCurrentGroup } from './util.js';
 import { GROUP_LAYOUT_KEY, getActiveLayout, getActiveStage, getGroupWorld, pullWorldStage, refreshWorlds, syncWorldGroup } from './worlds.js';
-import { applyLayoutMutes, forceTurn, getEffectiveNote, isNoteApplied, moveInOrOut, setNoteApplied, syncNoteToChat } from './scene.js';
+import { applyLayoutMutes, forceTurn, getEffectiveNote, isNoteApplied, moveInOrOut, restoreScene, setNoteApplied, syncNoteToChat } from './scene.js';
 import { renderSettings, resetSettingsGroup } from './drawer.js';
 import { refocusViewer } from './images.js';
 import { isNarrator } from './narrator.js';
@@ -477,8 +477,14 @@ function openPanel() {
  * lingering over a solo character outside the worlds. The wand button still
  * toggles it by hand.
  */
-export function syncPanelToChat() {
+export async function syncPanelToChat() {
     focusedAvatar = null;
+    // First, so the world sync and everything painted below see this chat's mutes.
+    try {
+        await restoreScene();
+    } catch (error) {
+        console.error('[SideStage] Could not put the chat\'s mutes back', error);
+    }
     // The new chat brings its own toggle state; honour it before anything
     // repaints from it.
     syncNoteToChat();

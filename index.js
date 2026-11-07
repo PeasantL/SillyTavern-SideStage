@@ -19,7 +19,7 @@ import { eventSource, event_types } from '../../../../script.js';
 import { applyEditorLinks, getSettings } from './src/settings.js';
 import { getSTContext } from './src/util.js';
 import { catchUpAfterReply, onBackToTab, refreshWorlds, renameInStages, syncWorldGroupsSoon } from './src/worlds.js';
-import { applyLayoutGreeting, openSceneFromLayout, quietOtherGreetingPickers, watchEntrances, watchManualNoteEdits } from './src/scene.js';
+import { applyLayoutGreeting, openSceneFromLayout, quietOtherGreetingPickers, rememberScene, watchEntrances, watchManualNoteEdits } from './src/scene.js';
 import { mountAssistBar, watchOocGhosting } from './src/rewrite.js';
 import { addWandButton, refreshPanel, syncPanelToChat, watchStrip } from './src/panel.js';
 import { addSettings } from './src/drawer.js';
@@ -78,6 +78,7 @@ jQuery(async () => {
         quietOtherGreetingPickers();
     });
     eventSource.on(event_types.CHAT_CHANGED, syncPanelToChat);
+    eventSource.on(event_types.GROUP_UPDATED, rememberScene);
     eventSource.on(event_types.GROUP_UPDATED, refreshPanel);
     eventSource.on(event_types.GENERATION_ENDED, refreshPanel);
     eventSource.on(event_types.GENERATION_STOPPED, refreshPanel);
