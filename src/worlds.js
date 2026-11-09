@@ -4,7 +4,6 @@
  */
 import { eventSource, event_types, characters, isGenerating, default_avatar, getCharacters, getOneCharacter, getRequestHeaders, saveSettingsDebounced, select_selected_character, this_chid } from '../../../../../script.js';
 import { groups, editGroup, group_generation_mode, DEFAULT_AUTO_MODE_DELAY } from '../../../../group-chats.js';
-import { saveWorldInfo } from '../../../../world-info.js';
 import * as worldInfo from '../../../../world-info.js';
 import { waitUntilCondition } from '../../../../utils.js';
 import { t } from '../../../../i18n.js';
@@ -211,8 +210,36 @@ async function writeWorldStage(world) {
         refreshPanel();
     }
 
-    await saveWorldInfo(world, data, true);
+    await saveLorebook(world, data);
     worldBases.set(world, structuredClone(written));
+}
+
+/**
+ * Writes a lorebook file, as SillyTavern's saveWorldInfo() does, but failing
+ * when the server does: saveWorldInfo() never looks at the reply, so a lorebook
+ * that couldn't be written (a folder SillyTavern may not write in) passed for
+ * saved. SillyTavern's copy follows, and the World Info editor is reopened on it
+ * if it shows this lorebook, or its next edit would save its older copy back.
+ * @param {string} name
+ * @param {object} data
+ */
+async function saveLorebook(name, data) {
+    const response = await fetch('/api/worldinfo/edit', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ name, data }),
+    });
+
+    if (!response.ok) {
+        throw new Error(t`SillyTavern could not save the lorebook "${name}".`);
+    }
+
+    worldInfo.worldInfoCache?.set(name, data);
+    await eventSource.emit(event_types.WORLDINFO_UPDATED, name, data);
+
+    if (typeof worldInfo.reloadEditor === 'function') {
+        worldInfo.reloadEditor(name);
+    }
 }
 
 /**
@@ -563,13 +590,31 @@ async function createWorldGroup(world, data) {
     const kept = data.extensions[WORLD_KEY];
     const stage = normalizeStage(kept && typeof kept === 'object' ? kept : {});
     stage.group = String(created.id);
+    const recordedBefore = recordedGroups.get(world) ?? '';
 
     worldStages.set(world, stage);
     worldBases.set(world, structuredClone(stage));
     worldLorebooks.set(world, stage.group);
     recordedGroups.set(world, stage.group);
     groupWorlds.set(stage.group, world);
-    await writeWorldStage(world);
+
+    try {
+        await writeWorldStage(world);
+    } catch (error) {
+        // A group the lorebook doesn't name is no world's: the next start would
+        // make another, one more on every page load. It is new and empty, so it goes.
+        worldStages.delete(world);
+        worldBases.delete(world);
+        worldLorebooks.set(world, '');
+        recordedGroups.set(world, recordedBefore);
+        groupWorlds.delete(stage.group);
+        await fetch('/api/groups/delete', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ id: stage.group }),
+        }).catch(() => {});
+        throw error;
+    }
 }
 
 /**
