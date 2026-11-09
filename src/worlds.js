@@ -2,7 +2,7 @@
  * Worlds and their groups: which group is a world's, its stage and selected layout, syncing members,
  * and catching up with what the Character Editor changed (on ⟳, at start, and on coming back to the tab).
  */
-import { eventSource, event_types, characters, isGenerating, default_avatar, getCharacters, getRequestHeaders, saveSettingsDebounced } from '../../../../../script.js';
+import { eventSource, event_types, characters, isGenerating, default_avatar, getCharacters, getOneCharacter, getRequestHeaders, saveSettingsDebounced, select_selected_character, this_chid } from '../../../../../script.js';
 import { groups, editGroup, group_generation_mode, DEFAULT_AUTO_MODE_DELAY } from '../../../../group-chats.js';
 import { saveWorldInfo } from '../../../../world-info.js';
 import * as worldInfo from '../../../../world-info.js';
@@ -684,12 +684,42 @@ function castSignature(list) {
 }
 
 /**
+ * The cards whose file changed on disk since SillyTavern read them: `date_added`
+ * is the file's change time, which any write moves (SillyTavern's own saves
+ * re-read the card, so theirs stay in step).
+ * @param {object[]} list The character list as the server has it now
+ * @returns {string[]} Avatar file names
+ */
+function changedCards(list) {
+    const known = new Map(characters.map(x => [x.avatar, x.date_added]));
+    return list.filter(x => x?.avatar && known.has(x.avatar) && known.get(x.avatar) !== x.date_added).map(x => x.avatar);
+}
+
+/**
+ * Re-reads cards changed outside SillyTavern. Its card form is what it saves a
+ * card from (a new chat, an export, the greetings popup closing all save the
+ * whole card), so the open card's form is filled again too: left as it was, it
+ * would write its old copy back over the Character Editor's edits.
+ * @param {string[]} avatars
+ */
+async function reloadCards(avatars) {
+    for (const avatar of avatars) {
+        await getOneCharacter(avatar);
+    }
+
+    if (this_chid !== undefined && avatars.includes(characters[this_chid]?.avatar)) {
+        select_selected_character(this_chid, { switchMenu: false });
+    }
+}
+
+/**
  * Takes what the Character Editor changed since SillyTavern last looked, with
  * two requests: the character list and the lorebooks' extensions. Cards that
  * joined, left or were renamed (or a world renamed, which relinks its cards)
- * reload the characters and sync the groups, as ⟳ does; a lorebook made a
- * world, or no longer one, re-reads the worlds; otherwise only the worlds whose
- * layouts were saved elsewhere are merged in.
+ * reload the characters and sync the groups, as ⟳ does; other cards saved there
+ * are read again (reloadCards()); a lorebook made a world, or no longer one,
+ * re-reads the worlds; otherwise only the worlds whose layouts were saved
+ * elsewhere are merged in.
  */
 async function catchUpWithEditor() {
     const [listed, extensions] = await Promise.all([fetchCharacterList(), fetchLorebookExtensions()]);
@@ -698,6 +728,8 @@ async function catchUpWithEditor() {
         await refreshWorlds({ reload: true });
         return;
     }
+
+    await reloadCards(changedCards(listed));
 
     const linked = [...new Set(characters.map(getCharacterWorld).filter(Boolean))];
     const worlds = linked.filter(name => isWorldLorebook({ extensions: extensions.get(name) }));
