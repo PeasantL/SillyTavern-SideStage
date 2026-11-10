@@ -11,7 +11,7 @@ import { applyLayoutMutes, forceTurn, getEffectiveNote, isNoteApplied, moveInOrO
 import { renderSettings, resetSettingsGroup } from './drawer.js';
 import { refocusViewer } from './images.js';
 import { isNarrator } from './narrator.js';
-import { getSoloScene, inviteToWorldGroup, soloTurn } from './solo.js';
+import { getSoloScene, inviteToWorldGroup, soloTurn, switchToCharacter } from './solo.js';
 
 const PANEL_ID = 'groupRoster';
 /**
@@ -151,18 +151,22 @@ function makeCardRow(avatar, solo = null) {
     row.appendChild(name);
 
     // Clicking the card pins the viewer to this character; clicking it again
-    // hands the viewer back to whoever spoke last. Bound to the avatar and the
+    // hands the viewer back to whoever spoke last. In a solo chat, clicking
+    // anyone else switches to their chat instead. Bound to the avatar and the
     // name rather than to the row, so it cannot fight the icon toggles' labels.
     if (character) {
         const isFocused = focusedAvatar === avatar;
-        row.classList.toggle('gr-focused', isFocused);
-        const focus = () => setFocusedAvatar(isFocused ? null : avatar);
+        const swap = Boolean(solo) && !isHost;
+        row.classList.toggle('gr-focused', isFocused && !swap);
+        const focus = swap ? () => switchToCharacter(avatar) : () => setFocusedAvatar(isFocused ? null : avatar);
 
         for (const element of [thumb, name]) {
             element.classList.add('gr-focusable');
-            element.title = isFocused
-                ? t`Showing only this character's images — click to follow the last speaker again`
-                : t`Show only this character's images`;
+            element.title = swap
+                ? t`Switch to ${character.name}'s chat`
+                : isFocused
+                    ? t`Showing only this character's images — click to follow the last speaker again`
+                    : t`Show only this character's images`;
             element.addEventListener('click', focus);
         }
 

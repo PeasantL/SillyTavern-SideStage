@@ -2,7 +2,7 @@
  * Solo chats with a world's card: the roster shows the world's cast, and inviting one of them moves the
  * chat into a new chat of the world's group, instead of SillyTavern's "Convert to group" making a new group.
  */
-import { characters, this_chid, chat, chat_metadata, getThumbnailUrl, getRequestHeaders, setActiveGroup, isGenerating, Generate, getCurrentChatId, deleteCharacterChatByName, system_message_types } from '../../../../../script.js';
+import { characters, selectCharacterById, this_chid, chat, chat_metadata, getThumbnailUrl, getRequestHeaders, setActiveGroup, isGenerating, Generate, getCurrentChatId, deleteCharacterChatByName, system_message_types } from '../../../../../script.js';
 import { selected_group, editGroup, openGroupById } from '../../../../group-chats.js';
 import { humanizedDateTime } from '../../../../RossAscends-mods.js';
 import { compressRequest } from '../../../../request-compression.js';
@@ -158,6 +158,28 @@ export async function inviteToWorldGroup(avatar) {
     }
 
     return moveInOrOut(avatar, true);
+}
+
+/**
+ * Switches from the open solo chat to another world member's: their card opens on its latest chat, as picking
+ * them in the character list does.
+ * @param {string} avatar The member's avatar file name
+ * @returns {Promise<void>}
+ */
+export async function switchToCharacter(avatar) {
+    const id = characters.findIndex(x => x.avatar === avatar);
+
+    if (id < 0 || String(id) === String(this_chid)) {
+        return;
+    }
+
+    if (isGenerating()) {
+        // SillyTavern ignores the switch while a reply is generated; say so rather than seem dead.
+        toastr.warning(t`Wait for the reply being generated to finish first.`);
+        return;
+    }
+
+    await selectCharacterById(id, { switchMenu: false });
 }
 
 /**
